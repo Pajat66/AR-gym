@@ -1,0 +1,7 @@
+# List your project dependencies here
+opencv-python==4.5.3
+numpy==1.21.0
+pillow==8.3.1
+pyttsx3==2.90
+mediapipe==0.8.9
+autopy==0.3.0

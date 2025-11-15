@@ -1,0 +1,717 @@
+// 主应用逻辑
+let currentPage = 'home';
+let currentMenu = null;
+
+// 训练结束/保存二次确认状态
+let stopConfirmPending = false;
+let saveConfirmPending = false;
+let stopConfirmTimer = null;
+let saveConfirmTimer = null;
+
+// 统计图表实例
+let statsChart = null;
+
+// 手势虚拟鼠标模式：'gesture' | 'mouse'
+window.handMouseMode = 'gesture';
+// 手势虚拟鼠标开关（根据页面和模式综合决定）
+window.handMouseEnabled = false;
+// 手势导航（1/2/3/4/5 指进入训练）开关，需手动点击“开始识别”开启
+window.gestureNavEnabled = false;
+
+// 简单语音播报封装（基于浏览器 Web Speech API）
+function speak(text, lang = 'zh-CN') {
+    try {
+        if (!('speechSynthesis' in window)) {
+            console.warn('当前浏览器不支持语音合成');
+            return;
+        }
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = lang;
+        window.speechSynthesis.speak(utter);
+    } catch (e) {
+        console.warn('语音播报失败:', e);
+    }
+}
+
+// 暴露到全局，供其他模块调用
+window.speak = speak;
+
+// 创建手势虚拟鼠标元素，并暴露更新方法
+document.addEventListener('DOMContentLoaded', () => {
+    const cursor = document.createElement('div');
+    cursor.id = 'hand-mouse-cursor';
+    document.body.appendChild(cursor);
+});
+
+window.updateHandMouseCursor = function(x, y, click = false) {
+    const cursor = document.getElementById('hand-mouse-cursor');
+    if (!cursor) return;
+
+    if (!window.handMouseEnabled) {
+        cursor.style.display = 'none';
+        return;
+    }
+
+    cursor.style.display = 'block';
+    cursor.style.left = `${x}px`;
+    cursor.style.top = `${y}px`;
+
+    if (click) {
+        cursor.style.transform = 'translate(-50%, -50%) scale(0.8)';
+        setTimeout(() => {
+            cursor.style.transform = 'translate(-50%, -50%) scale(1)';
+        }, 100);
+
+        // 在页面内模拟一次点击事件（不能控制系统鼠标，只能点击网页元素）
+        const el = document.elementFromPoint(x, y);
+        if (el) {
+            el.click();
+        }
+    }
+};
+
+// 切换首页手势识别 / 鼠标模式
+function toggleHandMode() {
+    const btn = document.getElementById('hand-mode-toggle');
+    if (window.handMouseMode === 'gesture') {
+        window.handMouseMode = 'mouse';
+        if (btn) btn.textContent = '切换为手势模式';
+        if (typeof window.speak === 'function') {
+            window.speak('已切换为鼠标模式');
+        }
+    } else {
+        window.handMouseMode = 'gesture';
+        if (btn) btn.textContent = '切换为鼠标模式';
+        if (typeof window.speak === 'function') {
+            window.speak('已切换为手势模式');
+        }
+    }
+
+    // 根据当前页面立即更新虚拟鼠标开关：
+    // 启用鼠标模式时，在所有页面启用手势鼠标（训练过程中由姿态检测代码单独关闭）
+    if (window.handMouseMode === 'mouse') {
+        window.handMouseEnabled = true;
+    } else {
+        window.handMouseEnabled = false;
+    }
+}
+
+// 切换手势导航开关（控制是否用 1~5 手指进入训练）
+function toggleGestureNav() {
+    const btn = document.getElementById('gesture-nav-toggle');
+    window.gestureNavEnabled = !window.gestureNavEnabled;
+
+    if (btn) {
+        btn.textContent = window.gestureNavEnabled ? '停止识别' : '开始识别';
+    }
+
+    if (typeof window.speak === 'function') {
+        window.speak(window.gestureNavEnabled ? '已开启手势识别导航' : '已关闭手势识别导航');
+    }
+}
+
+// 请求摄像头权限
+async function requestCameraPermission() {
+    try {
+        console.log('请求摄像头权限...');
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: 'user' // 前置摄像头
+            } 
+        });
+        console.log('✓ 摄像头权限已授予');
+        
+        // 立即停止流，我们会在需要时重新获取
+        stream.getTracks().forEach(track => track.stop());
+        
+        // 更新页面提示
+        const videoElement = document.getElementById('input_video');
+        if (videoElement) {
+            videoElement.style.border = '2px solid #4CAF50';
+        }
+    } catch (error) {
+        console.error('✗ 摄像头权限被拒绝或不可用:', error);
+        console.error('错误类型:', error.name);
+        console.error('错误信息:', error.message);
+        
+        if (error.name === 'NotAllowedError') {
+            alert('摄像头权限被拒绝。请在浏览器设置中允许摄像头访问，然后刷新页面。');
+        } else if (error.name === 'NotFoundError') {
+            alert('未检测到摄像头设备。请连接摄像头后刷新页面。');
+        } else {
+            alert('无法访问摄像头: ' + error.message);
+        }
+    }
+}
+
+// 页面初始化
+document.addEventListener('DOMContentLoaded', function() {
+    showPage('home');
+    loadStats();
+    loadHistory();
+    loadVideos(); // 加载视频列表
+    loadStatsChart(); // 加载统计折线图
+    
+    // 先请求摄像头权限（即使MediaPipe未加载）
+    requestCameraPermission();
+    
+    // 等待MediaPipe加载完成后再启动手部检测
+    let mediaPipeCheckCount = 0;
+    const maxMediaPipeChecks = 50; // 最多检查10秒
+    
+    function initAfterMediaPipe() {
+        mediaPipeCheckCount++;
+        
+        if (window.MediaPipe && window.MediaPipe.Hands && window.MediaPipe.Camera) {
+            console.log('✓ MediaPipe已就绪，启动手部检测');
+            startHandDetection();
+            return;
+        }
+        
+        if (mediaPipeCheckCount >= maxMediaPipeChecks) {
+            console.error('✗ MediaPipe加载超时，手部检测功能将不可用');
+            console.error('请检查：');
+            console.error('1. 网络连接是否正常');
+            console.error('2. 是否能访问 https://cdn.jsdelivr.net');
+            console.error('3. 查看控制台是否有MediaPipe加载错误');
+            console.error('4. 尝试刷新页面 (Ctrl+F5)');
+            return;
+        }
+        
+        // 只在每5次检查时输出一次日志，减少控制台噪音
+        if (mediaPipeCheckCount % 5 === 0) {
+            console.log(`等待MediaPipe加载... (${mediaPipeCheckCount}/${maxMediaPipeChecks})`);
+        }
+        
+        setTimeout(initAfterMediaPipe, 200);
+    }
+    
+    // 监听MediaPipe加载完成事件
+    window.addEventListener('mediapipeLoaded', function() {
+        if (window.MediaPipe) {
+            console.log('收到MediaPipe加载完成事件');
+            initAfterMediaPipe();
+        } else {
+            console.error('MediaPipe加载失败，某些功能可能无法使用');
+            console.error('请检查浏览器控制台的错误信息');
+            console.error('查看Network标签，检查哪些资源加载失败');
+        }
+    });
+    
+    // 如果事件已经触发，直接检查
+    setTimeout(initAfterMediaPipe, 500);
+});
+
+// 页面切换
+function showPage(pageName) {
+    // 隐藏所有页面
+    document.querySelectorAll('.page').forEach(page => {
+        page.classList.remove('active');
+    });
+    
+    // 显示目标页面
+    const targetPage = document.getElementById(pageName + '-page');
+    if (targetPage) {
+        targetPage.classList.add('active');
+        currentPage = pageName;
+    }
+    
+    // 根据页面和模式启用/禁用手势虚拟鼠标：
+    // 启用鼠标模式时，在所有页面启用手势鼠标（训练过程中由姿态检测代码单独关闭）
+    if (window.handMouseMode === 'mouse') {
+        window.handMouseEnabled = true;
+    } else {
+        window.handMouseEnabled = false;
+    }
+}
+
+// 开始训练（选择部位）
+function startExercise(type) {
+    showPage('exercise');
+    
+    if (type === 'upper_body') {
+        showMenu('upper-body-menu');
+    } else if (type === 'lower_body') {
+        showMenu('lower-body-menu');
+    }
+}
+
+// 显示菜单
+function showMenu(menuId) {
+    // 隐藏所有菜单（包括总菜单和子菜单）
+    document.querySelectorAll('.menu-section').forEach(menu => {
+        menu.style.display = 'none';
+    });
+    
+    // 隐藏训练界面
+    document.getElementById('training-interface').style.display = 'none';
+    
+    // 显示目标菜单
+    const targetMenu = document.getElementById(menuId);
+    if (targetMenu) {
+        targetMenu.style.display = 'block';
+        currentMenu = menuId;
+    }
+}
+
+// 选择运动类型
+function selectExercise(exerciseType) {
+    if (exerciseType === 'barbell_curl') {
+        showMenu('barbell-curl-menu');
+    } else if (exerciseType === 'barbell_sit') {
+        showMenu('barbell-sit-menu');
+    } else {
+        // 直接开始训练
+        startExerciseType(exerciseType);
+    }
+}
+
+// 开始特定类型的训练
+function startExerciseType(exerciseType) {
+    // 隐藏所有菜单
+    document.querySelectorAll('.menu-section').forEach(menu => {
+        menu.style.display = 'none';
+    });
+    
+    // 显示训练界面
+    const trainingInterface = document.getElementById('training-interface');
+    trainingInterface.style.display = 'block';
+    
+    // 显示训练信息，隐藏视频容器
+    const trainingInfo = trainingInterface.querySelector('.training-info');
+    const videoContainer = document.getElementById('training-video-container');
+    trainingInfo.style.display = 'block';
+    videoContainer.style.display = 'none';
+    
+    // 更新标题
+    const exerciseNames = {
+        'pushup': '俯卧撑计数',
+        'squat': '蹲起',
+        'reverse_crunch': '反向卷腹',
+        'barbell_curl_left': '左侧杠铃弯举',
+        'barbell_curl_right': '右侧杠铃弯举',
+        'barbell_sit_left': '左侧杠铃坐姿',
+        'barbell_sit_right': '右侧杠铃坐姿'
+    };
+    
+    const exerciseName = exerciseNames[exerciseType] || '训练中';
+    document.getElementById('exercise-title').textContent = exerciseName;
+    document.getElementById('training-exercise-name').textContent = exerciseName;
+    document.getElementById('training-exercise-desc').textContent = '请确保摄像头已开启，站在摄像头前准备开始训练';
+    
+    // 重置计数
+    document.getElementById('exercise-count').textContent = '0';
+    document.getElementById('exercise-angle').textContent = '0°';
+    document.getElementById('exercise-fps').textContent = '0';
+    
+    // 保存当前训练类型
+    window.currentExerciseType = exerciseType;
+}
+
+// 从按钮开始训练
+function startTrainingFromButton() {
+    if (!window.currentExerciseType) {
+        alert('请先选择训练类型');
+        return;
+    }
+    
+    // 隐藏训练信息，显示视频容器
+    const trainingInfo = document.querySelector('.training-info');
+    const videoContainer = document.getElementById('training-video-container');
+    trainingInfo.style.display = 'none';
+    videoContainer.style.display = 'block';
+    
+    // 开始姿态检测
+    startTraining(window.currentExerciseType);
+}
+
+// 停止训练（一次点击确认即可结束）
+function stopExercise() {
+    const confirmed = window.confirm('确定要结束本次训练吗？');
+    if (!confirmed) return;
+
+    // 停止姿态检测与摄像头
+    stopTraining();
+
+    // 重置训练界面UI
+    const trainingInterface = document.getElementById('training-interface');
+    const trainingInfo = trainingInterface ? trainingInterface.querySelector('.training-info') : null;
+    const videoContainer = document.getElementById('training-video-container');
+    if (trainingInfo) trainingInfo.style.display = 'block';
+    if (videoContainer) videoContainer.style.display = 'none';
+
+    // 清空当前训练类型，避免下次“开始训练”直接继续上次
+    window.currentExerciseType = null;
+
+    if (typeof window.speak === 'function') {
+        window.speak('训练已结束');
+    }
+
+    // 返回首页
+    backToHome();
+}
+
+// 返回首页
+function backToHome() {
+    showPage('home');
+    currentMenu = null;
+}
+
+// 保存运动数据（需要二次确认，并在保存后结束训练）
+async function saveExerciseData() {
+    if (!window.currentExerciseType || !window.exerciseData || window.exerciseData.count === 0) {
+        alert('没有可保存的数据');
+        return;
+    }
+
+    if (!saveConfirmPending) {
+        saveConfirmPending = true;
+        if (saveConfirmTimer) {
+            clearTimeout(saveConfirmTimer);
+        }
+        saveConfirmTimer = setTimeout(() => {
+            saveConfirmPending = false;
+        }, 5000);
+
+        if (typeof window.speak === 'function') {
+            window.speak('再次点击保存数据将结束本次训练');
+        }
+        alert('再次点击“保存数据”将保存本次训练并结束训练');
+        return;
+    }
+
+    saveConfirmPending = false;
+    if (saveConfirmTimer) {
+        clearTimeout(saveConfirmTimer);
+        saveConfirmTimer = null;
+    }
+
+    const duration = Math.floor((Date.now() - window.exerciseData.startTime) / 1000);
+
+    const data = {
+        user_id: 'default_user',
+        exercise_type: window.currentExerciseType,
+        count: window.exerciseData.count,
+        duration: duration,
+        angle_data: window.exerciseData.angles
+    };
+    
+    try {
+        const response = await fetch('/api/save_exercise', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('数据保存成功！');
+            if (typeof window.speak === 'function') {
+                window.speak('数据保存成功，本次训练已结束');
+            }
+            loadStats();
+            loadHistory();
+            loadStatsChart(); // 同步刷新折线图
+            // 保存成功后结束训练并返回首页，避免后台仍有占用
+            stopTraining();
+            backToHome();
+        } else {
+            alert('保存失败: ' + result.error);
+        }
+    } catch (error) {
+        alert('保存失败: ' + error.message);
+    }
+}
+
+// 加载统计数据
+async function loadStats() {
+    try {
+        const response = await fetch('/api/get_stats?user_id=default_user');
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            displayStats(result.data);
+        }
+    } catch (error) {
+        console.error('加载统计数据失败:', error);
+    }
+}
+
+// 从历史记录加载折线图数据（按日期汇总总次数）
+async function loadStatsChart() {
+    const canvas = document.getElementById('stats-chart');
+    if (!canvas) return;
+
+    try {
+        const response = await fetch('/api/get_history?user_id=default_user&limit=100');
+        const result = await response.json();
+        if (!(result.success && result.data && result.data.length > 0)) {
+            return;
+        }
+
+        const records = result.data;
+        // 按日期汇总次数
+        const dateMap = new Map();
+        records.forEach(rec => {
+            if (!rec.created_at) return;
+            const d = new Date(rec.created_at);
+            const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            const prev = dateMap.get(key) || 0;
+            dateMap.set(key, prev + (rec.count || 0));
+        });
+
+        const labels = Array.from(dateMap.keys()).sort();
+        const data = labels.map(k => dateMap.get(k));
+
+        renderStatsChart(labels, data);
+    } catch (error) {
+        console.error('加载统计折线图数据失败:', error);
+    }
+}
+
+function renderStatsChart(labels, data) {
+    const ctx = document.getElementById('stats-chart');
+    if (!ctx || typeof Chart === 'undefined') return;
+
+    if (statsChart) {
+        statsChart.destroy();
+    }
+
+    statsChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: '每日总训练次数',
+                data,
+                borderColor: 'rgba(99, 102, 241, 1)',
+                backgroundColor: 'rgba(99, 102, 241, 0.2)',
+                tension: 0.25,
+                fill: true,
+                pointRadius: 3
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { display: true },
+                tooltip: { enabled: true }
+            },
+            scales: {
+                x: {
+                    title: { display: true, text: '日期' }
+                },
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: '训练次数' }
+                }
+            }
+        }
+    });
+}
+
+// 显示统计数据
+function displayStats(stats) {
+    const statsContent = document.getElementById('stats-content');
+    if (!statsContent) return;
+    
+    if (stats.length === 0) {
+        statsContent.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">暂无统计数据</p>';
+        return;
+    }
+    
+    const exerciseNames = {
+        'pushup': '俯卧撑',
+        'squat': '蹲起',
+        'reverse_crunch': '反向卷腹',
+        'barbell_curl_left': '左侧杠铃弯举',
+        'barbell_curl_right': '右侧杠铃弯举',
+        'barbell_sit_left': '左侧杠铃坐姿',
+        'barbell_sit_right': '右侧杠铃坐姿'
+    };
+    
+    statsContent.innerHTML = stats.map(stat => `
+        <div class="stat-item">
+            <h3>${exerciseNames[stat.exercise_type] || stat.exercise_type}</h3>
+            <p>总次数: <strong>${stat.total_count}</strong></p>
+            <p>总时长: <strong>${formatDuration(stat.total_duration)}</strong></p>
+            <p>最后训练: <strong>${formatDate(stat.last_exercise_date)}</strong></p>
+        </div>
+    `).join('');
+}
+
+// 加载历史记录
+async function loadHistory() {
+    try {
+        const response = await fetch('/api/get_history?user_id=default_user&limit=20');
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            displayHistory(result.data);
+        }
+    } catch (error) {
+        console.error('加载历史记录失败:', error);
+    }
+}
+
+// 显示历史记录
+function displayHistory(records) {
+    const historyContent = document.getElementById('history-content');
+    if (!historyContent) return;
+    
+    if (records.length === 0) {
+        historyContent.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">暂无历史记录</p>';
+        return;
+    }
+    
+    const exerciseNames = {
+        'pushup': '俯卧撑',
+        'squat': '蹲起',
+        'reverse_crunch': '反向卷腹',
+        'barbell_curl_left': '左侧杠铃弯举',
+        'barbell_curl_right': '右侧杠铃弯举',
+        'barbell_sit_left': '左侧杠铃坐姿',
+        'barbell_sit_right': '右侧杠铃坐姿'
+    };
+    
+    historyContent.innerHTML = records.map(record => `
+        <div class="history-item">
+            <h3>${exerciseNames[record.exercise_type] || record.exercise_type}</h3>
+            <p>次数: <strong>${record.count}</strong></p>
+            <p>时长: <strong>${formatDuration(record.duration)}</strong></p>
+            <p>时间: <strong>${formatDate(record.created_at)}</strong></p>
+        </div>
+    `).join('');
+}
+
+// 格式化时长
+function formatDuration(seconds) {
+    if (!seconds) return '0秒';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+        return `${hours}小时${minutes}分钟${secs}秒`;
+    } else if (minutes > 0) {
+        return `${minutes}分钟${secs}秒`;
+    } else {
+        return `${secs}秒`;
+    }
+}
+
+// 格式化日期
+function formatDate(dateString) {
+    if (!dateString) return '未知';
+    const date = new Date(dateString);
+    return date.toLocaleString('zh-CN');
+}
+
+// 加载视频列表
+async function loadVideos() {
+    try {
+        const response = await fetch('/api/get_videos?limit=12');
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            displayVideos(result.data);
+        } else {
+            const container = document.getElementById('videos-container');
+            if (container) {
+                container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">暂无视频</p>';
+            }
+        }
+    } catch (error) {
+        console.error('加载视频失败:', error);
+        const container = document.getElementById('videos-container');
+        if (container) {
+            container.innerHTML = '<p style="text-align: center; color: var(--danger-color);">加载视频失败，请稍后重试</p>';
+        }
+    }
+}
+
+// 显示视频列表
+function displayVideos(videos) {
+    const container = document.getElementById('videos-container');
+    if (!container) return;
+    
+    if (videos.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">暂无视频</p>';
+        return;
+    }
+    
+    container.innerHTML = videos.map(video => `
+        <div class="video-card" onclick="playVideo(${video.Video_ID})">
+            <img src="${video.Video_Image_URL || ''}" alt="${video.Title}" class="video-thumbnail" 
+                 onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'300\' height=\'200\'%3E%3Crect fill=\'%231e293b\' width=\'300\' height=\'200\'/%3E%3Ctext fill=\'%23cbd5e1\' x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\'%3E视频封面%3C/text%3E%3C/svg%3E'">
+            <div class="video-card-content">
+                <h4 class="video-card-title">${video.Title}</h4>
+                <div class="video-card-meta">
+                    <span>⏱️ ${video.Estimated_Time}分钟</span>
+                    <span>🔥 ${video.Estimated_Calories}卡</span>
+                    <span>⭐ ${video.StarCount || 0}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// 播放视频
+async function playVideo(videoId) {
+    try {
+        const response = await fetch(`/api/get_video/${videoId}`);
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            const video = result.data;
+            const modal = document.getElementById('video-modal');
+            const player = document.getElementById('video-player');
+            const source = document.getElementById('video-source');
+            
+            // 设置视频信息
+            document.getElementById('video-modal-title').textContent = video.Title;
+            document.getElementById('video-content').textContent = video.Content || '暂无介绍';
+            document.getElementById('video-suitable').textContent = video.Suitable_People || '所有人';
+            document.getElementById('video-time').textContent = `⏱️ ${video.Estimated_Time}分钟`;
+            document.getElementById('video-calories').textContent = `🔥 ${video.Estimated_Calories}卡路里`;
+            document.getElementById('video-coach').textContent = video.Coach_Name ? `👨‍🏫 ${video.Coach_Name}` : '';
+            
+            // 设置视频源
+            source.src = video.Video_URL;
+            player.load();
+            
+            // 显示模态框
+            modal.style.display = 'block';
+        } else {
+            alert('视频加载失败');
+        }
+    } catch (error) {
+        console.error('播放视频失败:', error);
+        alert('播放视频失败，请稍后重试');
+    }
+}
+
+// 关闭视频模态框
+function closeVideoModal() {
+    const modal = document.getElementById('video-modal');
+    const player = document.getElementById('video-player');
+    if (modal) modal.style.display = 'none';
+    if (player) {
+        player.pause();
+        player.currentTime = 0;
+    }
+}
+
+// 点击模态框外部关闭
+window.onclick = function(event) {
+    const modal = document.getElementById('video-modal');
+    if (event.target === modal) {
+        closeVideoModal();
+    }
+}
+

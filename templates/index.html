@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR健身教练 - 智能动作检测系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 使用普通<script>方式加载MediaPipe，兼容CDN提供的全局变量 -->
+    <script>
+        (function() {
+            const CDN_SOURCES = [
+                'https://cdn.jsdelivr.net/npm',
+                'https://unpkg.com'
+            ];
+
+            function loadScript(src) {
+                return new Promise((resolve, reject) => {
+                    const s = document.createElement('script');
+                    s.src = src;
+                    s.async = true;
+                    s.onload = () => resolve();
+                    s.onerror = () => reject(new Error('加载失败: ' + src));
+                    document.head.appendChild(s);
+                });
+            }
+
+            let mediaPipeLoaded = false;
+
+            async function loadMediaPipe() {
+                for (const base of CDN_SOURCES) {
+                    try {
+                        console.log(`尝试从 ${base} 加载MediaPipe脚本...`);
+
+                        await loadScript(`${base}/@mediapipe/camera_utils/camera_utils.js`);
+                        await loadScript(`${base}/@mediapipe/hands/hands.js`);
+                        await loadScript(`${base}/@mediapipe/pose/pose.js`);
+                        await loadScript(`${base}/@mediapipe/drawing_utils/drawing_utils.js`);
+
+                        // 这些是MediaPipe UMD脚本在全局挂载的变量
+                        if (window.Camera && window.Hands && window.Pose &&
+                            window.drawConnectors && window.drawLandmarks &&
+                            window.HAND_CONNECTIONS && window.POSE_CONNECTIONS) {
+                            window.MediaPipe = {
+                                Camera: window.Camera,
+                                Hands: window.Hands,
+                                HAND_CONNECTIONS: window.HAND_CONNECTIONS,
+                                Pose: window.Pose,
+                                POSE_CONNECTIONS: window.POSE_CONNECTIONS,
+                                drawConnectors: window.drawConnectors,
+                                drawLandmarks: window.drawLandmarks
+                            };
+
+                            mediaPipeLoaded = true;
+                            console.log('✓ MediaPipe加载成功！');
+                            console.log('✓ 使用的CDN:', base);
+                            console.log('✓ 可用模块:', Object.keys(window.MediaPipe));
+
+                            // 触发加载完成事件
+                            window.dispatchEvent(new Event('mediapipeLoaded'));
+                            return;
+                        } else {
+                            throw new Error('MediaPipe全局对象未正确挂载');
+                        }
+                    } catch (error) {
+                        console.warn(`从 ${base} 加载MediaPipe失败:`, error.message);
+                    }
+                }
+
+                console.error('✗ MediaPipe模块加载失败！所有CDN源都不可用');
+                console.error('');
+                console.error('可能的原因：');
+                console.error('1. 网络连接问题，无法访问CDN');
+                console.error('2. 防火墙或代理阻止了CDN访问');
+                console.error('3. 浏览器或网络环境阻止了脚本加载');
+                console.error('4. 需要配置代理或VPN');
+                console.error('');
+                console.error('解决方案：');
+                console.error('1. 检查网络连接');
+                console.error('2. 尝试访问: https://cdn.jsdelivr.net 或 https://unpkg.com');
+                console.error('3. 检查防火墙/代理设置');
+                console.error('4. 使用VPN或更换网络');
+                console.error('5. 查看Network标签，检查哪些资源加载失败');
+
+                window.MediaPipe = null;
+                window.dispatchEvent(new Event('mediapipeLoaded'));
+            }
+
+            // 超时保护：10秒内仍未成功时给出提示（不重复触发事件）
+            setTimeout(function() {
+                if (!mediaPipeLoaded || !window.MediaPipe) {
+                    console.error('✗ MediaPipe加载超时（10秒）');
+                    console.error('请查看上方的错误信息以获取更多详情');
+                }
+            }, 10000);
+
+            // 开始加载
+            loadMediaPipe();
+        })();
+    </script>
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部导航栏 -->
+        <header class="header">
+            <div class="logo">
+                <h1>🏋️ AR健身教练</h1>
+            </div>
+            <nav class="nav">
+                <button class="nav-btn" onclick="showPage('home')">首页</button>
+                <button class="nav-btn" onclick="showPage('exercise')">开始训练</button>
+                <button class="nav-btn" onclick="showPage('stats')">数据统计</button>
+                <button class="nav-btn" onclick="showPage('history')">历史记录</button>
+            </nav>
+        </header>
+
+        <!-- 主页面 -->
+        <div id="home-page" class="page active">
+            <div class="hero-section">
+                <h2 class="hero-title">欢迎使用AR健身教练</h2>
+                <p class="hero-subtitle">智能动作检测系统，让您的健身更科学、更高效</p>
+                
+                <!-- 使用说明 -->
+                <div class="instruction-section">
+                    <div class="instruction-card">
+                        <h3>📖 使用说明</h3>
+                        <div class="instruction-content">
+                            <div class="instruction-item">
+                                <span class="instruction-number">1</span>
+                                <div>
+                                    <strong>手势识别导航</strong>
+                                    <p>在摄像头前伸出手指选择具体动作：1=俯卧撑，2=蹲起，3=反向卷腹，4=左侧杠铃弯举，5=右侧杠铃弯举；保持手势3秒确认</p>
+                                </div>
+                            </div>
+                            <div class="instruction-item">
+                                <span class="instruction-number">2</span>
+                                <div>
+                                    <strong>选择训练动作</strong>
+                                    <p>根据菜单提示，使用手势或点击按钮选择具体的训练动作</p>
+                                </div>
+                            </div>
+                            <div class="instruction-item">
+                                <span class="instruction-number">3</span>
+                                <div>
+                                    <strong>开始训练</strong>
+                                    <p>系统会自动检测您的动作，实时显示计数、角度和FPS，帮助您规范动作</p>
+                                </div>
+                            </div>
+                            <div class="instruction-item">
+                                <span class="instruction-number">4</span>
+                                <div>
+                                    <strong>保存数据</strong>
+                                    <p>训练结束后可以保存数据，查看统计和历史记录，追踪您的健身进度</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 快速开始按钮 -->
+                <div class="quick-start-section">
+                    <button class="btn-primary" onclick="showPage('exercise')">
+                        <span class="btn-icon">🚀</span>
+                        <span>开始训练</span>
+                    </button>
+                </div>
+
+                <!-- 训练类型卡片 -->
+                <div class="exercise-grid">
+                    <div class="exercise-card" onclick="startExercise('upper_body')">
+                        <div class="card-icon">💪</div>
+                        <h3>上肢训练</h3>
+                        <p>杠铃弯举、杠铃坐姿</p>
+                        <button class="card-btn">点击开始</button>
+                    </div>
+                    <div class="exercise-card" onclick="startExercise('lower_body')">
+                        <div class="card-icon">🏃</div>
+                        <h3>下肢训练</h3>
+                        <p>俯卧撑、反向卷腹、蹲起</p>
+                        <button class="card-btn">点击开始</button>
+                    </div>
+                </div>
+
+                <!-- 手势识别预览 -->
+                <div class="camera-section">
+                    <h3>手势识别演示</h3>
+                    <div style="margin-bottom: 10px; text-align: center; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
+                        <button id="hand-mode-toggle" class="btn-primary" style="padding: 8px 20px; font-size: 0.9rem;" onclick="toggleHandMode()">
+                            切换为鼠标模式
+                        </button>
+                        <button id="gesture-nav-toggle" class="btn-primary" style="padding: 8px 20px; font-size: 0.9rem; background: var(--secondary-color);" onclick="toggleGestureNav()">
+                            开始识别
+                        </button>
+                    </div>
+                    <div class="camera-preview" id="camera-preview">
+                        <video id="input_video" autoplay></video>
+                        <canvas id="output_canvas"></canvas>
+                        <div class="gesture-hint" id="gesture-hint">
+                            <p>请伸出手指选择具体动作：</p>
+                            <p>1️⃣ 俯卧撑计数</p>
+                            <p>2️⃣ 蹲起</p>
+                            <p>3️⃣ 反向卷腹</p>
+                            <p>4️⃣ 左侧杠铃弯举</p>
+                            <p>5️⃣ 右侧杠铃弯举</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 教学视频 -->
+                <div class="videos-section">
+                    <h3>📹 教学视频</h3>
+                    <p class="section-subtitle">观看专业教练的讲解和示范，学习正确的动作要领</p>
+                    <div id="videos-container" class="videos-grid">
+                        <!-- 视频列表将动态加载 -->
+                        <div class="loading">正在加载视频...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 训练页面 -->
+        <div id="exercise-page" class="page">
+            <div class="exercise-container">
+                <div class="exercise-header">
+                    <h2 id="exercise-title">选择训练动作</h2>
+                    <button class="btn-back" onclick="backToHome()">返回</button>
+                </div>
+
+                <!-- 训练部位总菜单 -->
+                <div id="exercise-group-menu" class="menu-section">
+                    <h3>选择训练部位</h3>
+                    <div class="menu-grid">
+                        <div class="menu-item" onclick="startExercise('upper_body')">
+                            <span class="menu-number">1</span>
+                            <span>上肢训练</span>
+                        </div>
+                        <div class="menu-item" onclick="startExercise('lower_body')">
+                            <span class="menu-number">2</span>
+                            <span>下肢训练</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 子菜单 -->
+                <div id="upper-body-menu" class="menu-section" style="display: none;">
+                    <h3>上肢训练</h3>
+                    <div class="menu-grid">
+                        <div class="menu-item" onclick="selectExercise('barbell_curl')">
+                            <span class="menu-number">1</span>
+                            <span>杠铃弯举</span>
+                        </div>
+                        <div class="menu-item" onclick="selectExercise('barbell_sit')">
+                            <span class="menu-number">2</span>
+                            <span>杠铃坐姿</span>
+                        </div>
+                        <div class="menu-item" onclick="backToHome()">
+                            <span class="menu-number">3</span>
+                            <span>返回主菜单</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="lower-body-menu" class="menu-section" style="display: none;">
+                    <h3>下肢训练</h3>
+                    <div class="menu-grid">
+                        <div class="menu-item" onclick="selectExercise('pushup')">
+                            <span class="menu-number">1</span>
+                            <span>俯卧撑计数</span>
+                        </div>
+                        <div class="menu-item" onclick="selectExercise('reverse_crunch')">
+                            <span class="menu-number">2</span>
+                            <span>反向卷腹</span>
+                        </div>
+                        <div class="menu-item" onclick="selectExercise('squat')">
+                            <span class="menu-number">3</span>
+                            <span>蹲起</span>
+                        </div>
+                        <div class="menu-item" onclick="backToHome()">
+                            <span class="menu-number">4</span>
+                            <span>返回主菜单</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="barbell-curl-menu" class="menu-section" style="display: none;">
+                    <h3>杠铃弯举</h3>
+                    <div class="menu-grid">
+                        <div class="menu-item" onclick="startExerciseType('barbell_curl_left')">
+                            <span class="menu-number">1</span>
+                            <span>左侧弯举</span>
+                        </div>
+                        <div class="menu-item" onclick="startExerciseType('barbell_curl_right')">
+                            <span class="menu-number">2</span>
+                            <span>右侧弯举</span>
+                        </div>
+                        <div class="menu-item" onclick="showMenu('upper-body-menu')">
+                            <span class="menu-number">3</span>
+                            <span>返回上一级</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="barbell-sit-menu" class="menu-section" style="display: none;">
+                    <h3>杠铃坐姿</h3>
+                    <div class="menu-grid">
+                        <div class="menu-item" onclick="startExerciseType('barbell_sit_left')">
+                            <span class="menu-number">1</span>
+                            <span>左侧坐姿</span>
+                        </div>
+                        <div class="menu-item" onclick="startExerciseType('barbell_sit_right')">
+                            <span class="menu-number">2</span>
+                            <span>右侧坐姿</span>
+                        </div>
+                        <div class="menu-item" onclick="showMenu('upper-body-menu')">
+                            <span class="menu-number">3</span>
+                            <span>返回上一级</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 训练界面 -->
+                <div id="training-interface" class="training-interface" style="display: none;">
+                    <div class="training-info">
+                        <h3 id="training-exercise-name">准备开始训练</h3>
+                        <p id="training-exercise-desc">请确保摄像头已开启，站在摄像头前准备开始</p>
+                        <button class="btn-start-training" onclick="startTrainingFromButton()">开始训练</button>
+                    </div>
+                    <div class="video-container" id="training-video-container" style="display: none;">
+                        <video id="training_video" autoplay></video>
+                        <canvas id="training_canvas"></canvas>
+                        <div class="training-stats">
+                            <div class="stat-card">
+                                <div class="stat-label">计数</div>
+                                <div class="stat-value" id="exercise-count">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">角度</div>
+                                <div class="stat-value" id="exercise-angle">0°</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">FPS</div>
+                                <div class="stat-value" id="exercise-fps">0</div>
+                            </div>
+                        </div>
+                        <div class="training-controls">
+                            <button class="btn-stop" onclick="stopExercise()">停止训练</button>
+                            <button class="btn-save" onclick="saveExerciseData()">保存数据</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 数据统计页面 -->
+        <div id="stats-page" class="page">
+            <div class="stats-container">
+                <h2>运动数据统计</h2>
+                <canvas id="stats-chart" style="max-width: 100%; margin-bottom: 30px;"></canvas>
+                <div id="stats-content" class="stats-grid">
+                    <!-- 统计数据将动态加载 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 历史记录页面 -->
+        <div id="history-page" class="page">
+            <div class="history-container">
+                <h2>历史记录</h2>
+                <div id="history-content" class="history-list">
+                    <!-- 历史记录将动态加载 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 视频播放模态框 -->
+        <div id="video-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="modal-close" onclick="closeVideoModal()">&times;</span>
+                <div id="video-player-container">
+                    <h2 id="video-modal-title"></h2>
+                    <div class="video-info">
+                        <span id="video-time"></span>
+                        <span id="video-calories"></span>
+                        <span id="video-coach"></span>
+                    </div>
+                    <video id="video-player" controls>
+                        <source id="video-source" src="" type="video/mp4">
+                        您的浏览器不支持视频播放
+                    </video>
+                    <div class="video-description">
+                        <h4>视频介绍</h4>
+                        <p id="video-content"></p>
+                        <p><strong>适合人群：</strong><span id="video-suitable"></span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/hand-detection.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/pose-detection.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
+

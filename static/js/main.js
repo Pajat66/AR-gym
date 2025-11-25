@@ -11,6 +11,9 @@ let saveConfirmTimer = null;
 // 统计图表实例
 let statsChart = null;
 
+// 当前登录用户信息（从 /api/me 获取）
+let currentUser = null;
+
 // 手势虚拟鼠标模式：'gesture' | 'mouse'
 window.handMouseMode = 'gesture';
 // 手势虚拟鼠标开关（根据页面和模式综合决定）
@@ -110,6 +113,185 @@ function toggleGestureNav() {
     }
 }
 
+// ===== 用户登录 / 注册相关 =====
+function toggleAuthPanel(forceOpen) {
+    const panel = document.getElementById('auth-panel');
+    if (!panel) return;
+    if (forceOpen === true) {
+        panel.classList.add('open');
+    } else if (forceOpen === false) {
+        panel.classList.remove('open');
+    } else {
+        panel.classList.toggle('open');
+    }
+}
+
+function switchAuthTab(tab) {
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    const tabLogin = document.getElementById('tab-login');
+    const tabRegister = document.getElementById('tab-register');
+    if (!loginForm || !registerForm || !tabLogin || !tabRegister) return;
+
+    if (tab === 'login') {
+        loginForm.style.display = 'block';
+        registerForm.style.display = 'none';
+        tabLogin.classList.add('active');
+        tabRegister.classList.remove('active');
+    } else {
+        loginForm.style.display = 'none';
+        registerForm.style.display = 'block';
+        tabLogin.classList.remove('active');
+        tabRegister.classList.add('active');
+    }
+}
+
+function updateAuthUI() {
+    const label = document.getElementById('auth-user-label');
+    const btnShowAuth = document.getElementById('btn-show-auth');
+    const btnLogout = document.getElementById('btn-logout');
+    if (!label || !btnShowAuth || !btnLogout) return;
+
+    if (currentUser) {
+        label.textContent = `已登录：${currentUser.username}`;
+        btnShowAuth.style.display = 'none';
+        btnLogout.style.display = 'inline-block';
+        // 已登录时隐藏首页登录/注册面板
+        toggleAuthPanel(false);
+    } else {
+        label.textContent = '未登录';
+        btnShowAuth.style.display = 'inline-block';
+        btnLogout.style.display = 'none';
+        // 未登录时默认展示首页登录/注册面板，方便用户操作
+        toggleAuthPanel(true);
+    }
+}
+
+async function fetchCurrentUser() {
+    try {
+        const res = await fetch('/api/me');
+        if (res.status === 401) {
+            currentUser = null;
+            updateAuthUI();
+            return;
+        }
+        const result = await res.json();
+        if (result.success) {
+            currentUser = result.data;
+        } else {
+            currentUser = null;
+        }
+        updateAuthUI();
+    } catch (e) {
+        console.error('获取当前用户失败:', e);
+    }
+}
+
+async function submitLogin(event) {
+    event.preventDefault();
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value.trim();
+    const errorEl = document.getElementById('login-error');
+    if (errorEl) {
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+    }
+
+    try {
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const result = await res.json();
+        if (!result.success) {
+            if (errorEl) {
+                errorEl.textContent = result.error || '登录失败';
+                errorEl.style.display = 'block';
+            } else {
+                alert(result.error || '登录失败');
+            }
+            return false;
+        }
+        currentUser = result.data;
+        updateAuthUI();
+        alert('登录成功');
+        loadStats();
+        loadHistory();
+        loadStatsChart();
+        return false;
+    } catch (e) {
+        console.error('登录请求失败:', e);
+        if (errorEl) {
+            errorEl.textContent = '登录请求失败，请稍后重试';
+            errorEl.style.display = 'block';
+        }
+        return false;
+    }
+}
+
+async function submitRegister(event) {
+    event.preventDefault();
+    const username = document.getElementById('register-username').value.trim();
+    const password = document.getElementById('register-password').value.trim();
+    const errorEl = document.getElementById('register-error');
+    if (errorEl) {
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+    }
+
+    if (password.length < 6) {
+        if (errorEl) {
+            errorEl.textContent = '密码长度至少为6位';
+            errorEl.style.display = 'block';
+        }
+        return false;
+    }
+
+    try {
+        const res = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const result = await res.json();
+        if (!result.success) {
+            if (errorEl) {
+                errorEl.textContent = result.error || '注册失败';
+                errorEl.style.display = 'block';
+            } else {
+                alert(result.error || '注册失败');
+            }
+            return false;
+        }
+        currentUser = result.data;
+        updateAuthUI();
+        alert('注册成功，已自动登录');
+        loadStats();
+        loadHistory();
+        loadStatsChart();
+        return false;
+    } catch (e) {
+        console.error('注册请求失败:', e);
+        if (errorEl) {
+            errorEl.textContent = '注册请求失败，请稍后重试';
+            errorEl.style.display = 'block';
+        }
+        return false;
+    }
+}
+
+async function logoutUser() {
+    try {
+        await fetch('/api/logout', { method: 'POST' });
+    } catch (e) {
+        console.error('退出登录请求失败:', e);
+    }
+    currentUser = null;
+    updateAuthUI();
+    alert('已退出登录');
+}
+
 // 请求摄像头权限
 async function requestCameraPermission() {
     try {
@@ -149,6 +331,7 @@ async function requestCameraPermission() {
 // 页面初始化
 document.addEventListener('DOMContentLoaded', function() {
     showPage('home');
+    fetchCurrentUser();
     loadStats();
     loadHistory();
     loadVideos(); // 加载视频列表
@@ -165,8 +348,13 @@ document.addEventListener('DOMContentLoaded', function() {
         mediaPipeCheckCount++;
         
         if (window.MediaPipe && window.MediaPipe.Hands && window.MediaPipe.Camera) {
-            console.log('✓ MediaPipe已就绪，启动手部检测');
+            console.log('✓ MediaPipe已就绪，启动手部检测并预热姿态检测');
+            // 1) 手部检测：用于首页手势导航/手势鼠标
             startHandDetection();
+            // 2) 预热姿态检测：提前加载 Pose 模型，减少第一次开始训练的等待时间
+            if (typeof initPoseDetection === 'function') {
+                initPoseDetection();
+            }
             return;
         }
         
@@ -391,7 +579,6 @@ async function saveExerciseData() {
     const duration = Math.floor((Date.now() - window.exerciseData.startTime) / 1000);
 
     const data = {
-        user_id: 'default_user',
         exercise_type: window.currentExerciseType,
         count: window.exerciseData.count,
         duration: duration,
@@ -407,6 +594,13 @@ async function saveExerciseData() {
             body: JSON.stringify(data)
         });
         
+        if (response.status === 401) {
+            alert('请先登录后再保存训练数据');
+            toggleAuthPanel(true);
+            showPage('home');
+            return;
+        }
+
         const result = await response.json();
         
         if (result.success) {
@@ -431,7 +625,12 @@ async function saveExerciseData() {
 // 加载统计数据
 async function loadStats() {
     try {
-        const response = await fetch('/api/get_stats?user_id=default_user');
+        const response = await fetch('/api/get_stats');
+        if (response.status === 401) {
+            // 未登录时不报错，只是不展示数据
+            displayStats([]);
+            return;
+        }
         const result = await response.json();
         
         if (result.success && result.data) {
@@ -442,39 +641,48 @@ async function loadStats() {
     }
 }
 
-// 从历史记录加载折线图数据（按日期汇总总次数）
+// 从统计表加载折线图数据（按动作类型展示总次数，与统计卡片保持一致）
 async function loadStatsChart() {
     const canvas = document.getElementById('stats-chart');
     if (!canvas) return;
 
     try {
-        const response = await fetch('/api/get_history?user_id=default_user&limit=100');
+        const response = await fetch('/api/get_stats');
+        if (response.status === 401) {
+            // 未登录时不展示折线图即可
+            return;
+        }
         const result = await response.json();
         if (!(result.success && result.data && result.data.length > 0)) {
+            // 没有数据时销毁旧图表
+            if (statsChart) {
+                statsChart.destroy();
+                statsChart = null;
+            }
             return;
         }
 
-        const records = result.data;
-        // 按日期汇总次数
-        const dateMap = new Map();
-        records.forEach(rec => {
-            if (!rec.created_at) return;
-            const d = new Date(rec.created_at);
-            const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-            const prev = dateMap.get(key) || 0;
-            dateMap.set(key, prev + (rec.count || 0));
-        });
+        const stats = result.data;
+        const exerciseNames = {
+            'pushup': '俯卧撑',
+            'squat': '蹲起',
+            'reverse_crunch': '反向卷腹',
+            'barbell_curl_left': '左侧杠铃弯举',
+            'barbell_curl_right': '右侧杠铃弯举',
+            'barbell_sit_left': '左侧杠铃坐姿',
+            'barbell_sit_right': '右侧杠铃坐姿'
+        };
 
-        const labels = Array.from(dateMap.keys()).sort();
-        const data = labels.map(k => dateMap.get(k));
+        const labels = stats.map(stat => exerciseNames[stat.exercise_type] || stat.exercise_type);
+        const data = stats.map(stat => stat.total_count || 0);
 
-        renderStatsChart(labels, data);
+        renderStatsChart(labels, data, '各动作总训练次数', '动作类型');
     } catch (error) {
         console.error('加载统计折线图数据失败:', error);
     }
 }
 
-function renderStatsChart(labels, data) {
+function renderStatsChart(labels, data, seriesLabel = '训练次数', xLabel = '日期') {
     const ctx = document.getElementById('stats-chart');
     if (!ctx || typeof Chart === 'undefined') return;
 
@@ -487,7 +695,7 @@ function renderStatsChart(labels, data) {
         data: {
             labels,
             datasets: [{
-                label: '每日总训练次数',
+                label: seriesLabel,
                 data,
                 borderColor: 'rgba(99, 102, 241, 1)',
                 backgroundColor: 'rgba(99, 102, 241, 0.2)',
@@ -504,7 +712,7 @@ function renderStatsChart(labels, data) {
             },
             scales: {
                 x: {
-                    title: { display: true, text: '日期' }
+                    title: { display: true, text: xLabel }
                 },
                 y: {
                     beginAtZero: true,
@@ -548,7 +756,12 @@ function displayStats(stats) {
 // 加载历史记录
 async function loadHistory() {
     try {
-        const response = await fetch('/api/get_history?user_id=default_user&limit=20');
+        const response = await fetch('/api/get_history?limit=20');
+        if (response.status === 401) {
+            // 未登录时不展示历史记录
+            displayHistory([]);
+            return;
+        }
         const result = await response.json();
         
         if (result.success && result.data) {

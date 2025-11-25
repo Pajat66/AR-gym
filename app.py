@@ -3,15 +3,16 @@ from flask_cors import CORS
 import pymysql
 from datetime import datetime
 import json
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here'  # 请在生产环境中更改
+app.secret_key = 'your-secret-key-here'  # 请在生产环境中更改（生产环境请使用环境变量或配置文件）
 CORS(app)
 
 # 数据库配置
 # 根据MySQL用户列表，project@% 用户有远程访问权限
 DB_CONFIG = {
-    'host': '192.168.164.117',
+    'host': '192.168.119.117',
     'port': 3306,
     'user': 'project',  # 使用project用户（有%权限，可从任何主机连接）
     'password': 'Zbp42682600',
@@ -21,7 +22,7 @@ DB_CONFIG = {
 
 # 备用配置1：尝试使用Zbp42682600用户（如果存在）
 DB_CONFIG_ZBP = {
-    'host': '192.168.164.117',
+    'host': '192.168.119.117',
     'port': 3306,
     'user': 'Zbp42682600',
     'password': 'Zbp42682600',
@@ -130,13 +131,15 @@ def init_database():
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """)
             
-            # 检查并创建用户表（如果不存在）
-            cursor.execute("SHOW TABLES LIKE 'webapp_users'")
+            # 检查并创建新的用户表 argym_users（专供当前Web应用登录使用）
+            cursor.execute("SHOW TABLES LIKE 'argym_users'")
             if not cursor.fetchone():
+                print("创建用户表 argym_users...")
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS webapp_users (
+                    CREATE TABLE IF NOT EXISTS argym_users (
                         id INT AUTO_INCREMENT PRIMARY KEY,
                         username VARCHAR(50) UNIQUE NOT NULL,
+                        password VARCHAR(255) NOT NULL,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         INDEX idx_username (username)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -178,31 +181,131 @@ def index():
     """主页面"""
     return render_template('index.html')
 
+@app.route('/api/register', methods=['POST'])
+def register():
+    """用户注册，使用 users_users 表"""
+    try:
+        data = request.json or {}
+        username = (data.get('username') or '').strip()
+        password = (data.get('password') or '').strip()
+
+        if not username or not password:
+            return jsonify({'success': False, 'error': '用户名和密码不能为空'}), 400
+
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'error': '数据库连接失败'}), 500
+
+        try:
+            with connection.cursor() as cursor:
+                # 检查用户名是否已存在（使用新表 argym_users）
+                cursor.execute("SELECT id FROM argym_users WHERE username = %s", (username,))
+                if cursor.fetchone():
+                    return jsonify({'success': False, 'error': '用户名已存在'}), 400
+
+                # 生成密码哈希并写入 argym_users 表
+                password_hash = generate_password_hash(password)
+                cursor.execute(
+                    "INSERT INTO argym_users (username, password, created_at) VALUES (%s, %s, NOW())",
+                    (username, password_hash)
+                )
+                user_id = cursor.lastrowid
+
+            connection.commit()
+        finally:
+            connection.close()
+
+        # 将用户信息写入 session，实现后续接口按用户隔离
+        session['user_id'] = user_id
+        session['username'] = username
+
+        return jsonify({'success': True, 'message': '注册成功', 'data': {'id': user_id, 'username': username}})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    """用户登录，使用 users_users 表"""
+    try:
+        data = request.json or {}
+        username = (data.get('username') or '').strip()
+        password = (data.get('password') or '').strip()
+
+        if not username or not password:
+            return jsonify({'success': False, 'error': '用户名和密码不能为空'}), 400
+
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'error': '数据库连接失败'}), 500
+
+        try:
+            with connection.cursor() as cursor:
+                # 从新表 argym_users 读取用户信息
+                cursor.execute("SELECT id, password FROM argym_users WHERE username = %s", (username,))
+                row = cursor.fetchone()
+
+            if not row:
+                return jsonify({'success': False, 'error': '用户名或密码错误'}), 401
+
+            user_id, password_hash = row
+            if not check_password_hash(password_hash, password):
+                return jsonify({'success': False, 'error': '用户名或密码错误'}), 401
+        finally:
+            connection.close()
+
+        # 登录成功，写入 session
+        session['user_id'] = user_id
+        session['username'] = username
+
+        return jsonify({'success': True, 'message': '登录成功', 'data': {'id': user_id, 'username': username}})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    """用户退出登录"""
+    session.clear()
+    return jsonify({'success': True, 'message': '已退出登录'})
+
+@app.route('/api/me', methods=['GET'])
+def current_user():
+    """获取当前登录用户信息"""
+    user_id = session.get('user_id')
+    username = session.get('username')
+    if not user_id:
+        return jsonify({'success': False, 'error': '未登录'}), 401
+    return jsonify({'success': True, 'data': {'id': user_id, 'username': username}})
+
 @app.route('/api/save_exercise', methods=['POST'])
 def save_exercise():
-    """保存运动记录"""
+    """保存运动记录（按当前登录用户）"""
     try:
-        data = request.json
+        # 必须是已登录用户
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'success': False, 'error': '用户未登录'}), 401
+
+        data = request.json or {}
         connection = get_db_connection()
         if not connection:
             return jsonify({'success': False, 'error': '数据库连接失败'}), 500
         
         with connection.cursor() as cursor:
-            # 插入运动记录
+            # 插入运动记录（与当前用户绑定）
             sql = """
                 INSERT INTO exercise_records 
                 (user_id, exercise_type, count, duration, angle_data)
                 VALUES (%s, %s, %s, %s, %s)
             """
             cursor.execute(sql, (
-                data.get('user_id', 'default_user'),
+                str(user_id),
                 data.get('exercise_type'),
                 data.get('count', 0),
                 data.get('duration', 0),
                 json.dumps(data.get('angle_data', []))
             ))
             
-            # 更新统计表
+            # 更新统计表（与当前用户绑定）
             sql_stats = """
                 INSERT INTO exercise_stats 
                 (user_id, exercise_type, total_count, total_duration, last_exercise_date)
@@ -213,7 +316,7 @@ def save_exercise():
                 last_exercise_date = NOW()
             """
             cursor.execute(sql_stats, (
-                data.get('user_id', 'default_user'),
+                str(user_id),
                 data.get('exercise_type'),
                 data.get('count', 0),
                 data.get('duration', 0),
@@ -229,9 +332,12 @@ def save_exercise():
 
 @app.route('/api/get_stats', methods=['GET'])
 def get_stats():
-    """获取运动统计"""
+    """获取当前登录用户的运动统计"""
     try:
-        user_id = request.args.get('user_id', 'default_user')
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'success': False, 'error': '用户未登录'}), 401
+
         exercise_type = request.args.get('exercise_type', None)
         
         connection = get_db_connection()
@@ -244,14 +350,14 @@ def get_stats():
                     SELECT * FROM exercise_stats 
                     WHERE user_id = %s AND exercise_type = %s
                 """
-                cursor.execute(sql, (user_id, exercise_type))
+                cursor.execute(sql, (str(user_id), exercise_type))
             else:
                 sql = """
                     SELECT * FROM exercise_stats 
                     WHERE user_id = %s
                     ORDER BY updated_at DESC
                 """
-                cursor.execute(sql, (user_id,))
+                cursor.execute(sql, (str(user_id),))
             
             stats = cursor.fetchall()
         
@@ -262,9 +368,12 @@ def get_stats():
 
 @app.route('/api/get_history', methods=['GET'])
 def get_history():
-    """获取运动历史记录"""
+    """获取当前登录用户的运动历史记录"""
     try:
-        user_id = request.args.get('user_id', 'default_user')
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'success': False, 'error': '用户未登录'}), 401
+
         exercise_type = request.args.get('exercise_type', None)
         limit = int(request.args.get('limit', 20))
         
@@ -280,7 +389,7 @@ def get_history():
                     ORDER BY created_at DESC
                     LIMIT %s
                 """
-                cursor.execute(sql, (user_id, exercise_type, limit))
+                cursor.execute(sql, (str(user_id), exercise_type, limit))
             else:
                 sql = """
                     SELECT * FROM exercise_records 
@@ -288,7 +397,7 @@ def get_history():
                     ORDER BY created_at DESC
                     LIMIT %s
                 """
-                cursor.execute(sql, (user_id, limit))
+                cursor.execute(sql, (str(user_id), limit))
             
             records = cursor.fetchall()
             # 解析JSON数据

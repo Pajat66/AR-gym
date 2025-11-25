@@ -15,6 +15,9 @@ window.currentExerciseType = currentExerciseType;
 window.exerciseData = exerciseData;
 
 function initPoseDetection() {
+    // 已初始化则直接复用，避免重复加载模型
+    if (poseDetector) return;
+
     if (!window.MediaPipe || !window.MediaPipe.Pose) {
         console.warn('MediaPipe Pose未加载，等待中...');
         // 减少重试频率，避免过多日志

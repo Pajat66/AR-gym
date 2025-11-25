@@ -112,6 +112,11 @@
                 <button class="nav-btn" onclick="showPage('stats')">数据统计</button>
                 <button class="nav-btn" onclick="showPage('history')">历史记录</button>
             </nav>
+            <div class="auth-status">
+                <span id="auth-user-label">未登录</span>
+                <button id="btn-show-auth" class="nav-btn nav-btn-secondary" onclick="toggleAuthPanel()">登录 / 注册</button>
+                <button id="btn-logout" class="nav-btn nav-btn-secondary" style="display: none;" onclick="logoutUser()">退出登录</button>
+            </div>
         </header>
 
         <!-- 主页面 -->
@@ -119,6 +124,43 @@
             <div class="hero-section">
                 <h2 class="hero-title">欢迎使用AR健身教练</h2>
                 <p class="hero-subtitle">智能动作检测系统，让您的健身更科学、更高效</p>
+
+                <!-- 登录注册区域 -->
+                <div class="auth-section">
+                    <div class="auth-panel" id="auth-panel">
+                        <div class="auth-tabs">
+                            <button id="tab-login" class="auth-tab active" type="button" onclick="switchAuthTab('login')">登录</button>
+                            <button id="tab-register" class="auth-tab" type="button" onclick="switchAuthTab('register')">注册</button>
+                        </div>
+                        <div class="auth-forms">
+                            <form id="login-form" class="auth-form" onsubmit="return submitLogin(event)">
+                                <div class="auth-field">
+                                    <label for="login-username">用户名</label>
+                                    <input id="login-username" type="text" autocomplete="username" required placeholder="请输入用户名">
+                                </div>
+                                <div class="auth-field">
+                                    <label for="login-password">密码</label>
+                                    <input id="login-password" type="password" autocomplete="current-password" required placeholder="请输入密码">
+                                </div>
+                                <div id="login-error" class="auth-error" style="display:none;"></div>
+                                <button class="btn-primary auth-submit" type="submit">登录</button>
+                            </form>
+
+                            <form id="register-form" class="auth-form" style="display:none;" onsubmit="return submitRegister(event)">
+                                <div class="auth-field">
+                                    <label for="register-username">用户名</label>
+                                    <input id="register-username" type="text" autocomplete="username" required placeholder="请输入用户名">
+                                </div>
+                                <div class="auth-field">
+                                    <label for="register-password">密码</label>
+                                    <input id="register-password" type="password" autocomplete="new-password" required placeholder="请输入密码（至少6位）">
+                                </div>
+                                <div id="register-error" class="auth-error" style="display:none;"></div>
+                                <button class="btn-primary auth-submit" type="submit">注册并登录</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- 使用说明 -->
                 <div class="instruction-section">

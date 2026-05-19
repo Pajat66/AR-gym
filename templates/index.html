@@ -109,6 +109,7 @@
             <nav class="nav">
                 <button class="nav-btn" onclick="showPage('home')">首页</button>
                 <button class="nav-btn" onclick="showPage('exercise')">开始训练</button>
+                <button class="nav-btn" onclick="showPage('ai-coach')">AI虚拟教练</button>
                 <button class="nav-btn" onclick="showPage('stats')">数据统计</button>
                 <button class="nav-btn" onclick="showPage('history')">历史记录</button>
             </nav>
@@ -393,6 +394,41 @@
             </div>
         </div>
 
+        <!-- AI虚拟教练页面 -->
+        <div id="ai-coach-page" class="page">
+            <div class="ai-coach-container">
+                <div class="ai-coach-hero">
+                    <div>
+                        <span class="section-kicker">Spark AI Coach</span>
+                        <h2>AI虚拟教练</h2>
+                        <p>围绕动作规范、训练计划、热身拉伸和恢复建议进行实时对话。</p>
+                    </div>
+                    <div class="coach-orbit" aria-hidden="true">
+                        <div class="coach-avatar">AI</div>
+                    </div>
+                </div>
+
+                <div class="ai-chat-shell">
+                    <div id="ai-chat-messages" class="ai-chat-messages">
+                        <div class="chat-message assistant">
+                            <div class="chat-bubble">
+                                你好，我是你的AI虚拟教练。你可以问我今天适合练什么、某个动作怎么做更标准，或者让帮你安排一组训练计划。
+                            </div>
+                        </div>
+                    </div>
+                    <form id="ai-chat-form" class="ai-chat-form" onsubmit="return submitAiCoachMessage(event)">
+                        <textarea id="ai-chat-input" rows="2" placeholder="例如：帮我安排一组20分钟的上肢训练，并提醒动作注意事项"></textarea>
+                        <button id="ai-chat-submit" class="btn-primary" type="submit">发送</button>
+                    </form>
+                    <div class="ai-quick-prompts">
+                        <button type="button" onclick="fillAiPrompt('我今天想练上肢，请给我一个适合初学者的训练计划')">上肢计划</button>
+                        <button type="button" onclick="fillAiPrompt('俯卧撑时肩膀不舒服，动作上可能要注意什么？')">动作纠正</button>
+                        <button type="button" onclick="fillAiPrompt('训练前后应该怎么热身和拉伸？')">热身拉伸</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 数据统计页面 -->
         <div id="stats-page" class="page">
             <div class="stats-container">
@@ -429,6 +465,10 @@
                         <source id="video-source" src="" type="video/mp4">
                         您的浏览器不支持视频播放
                     </video>
+                    <div id="video-fallback" class="video-fallback" style="display: none;">
+                        当前视频链接无法直接在浏览器播放器中播放。
+                        <a id="video-open-link" href="#" target="_blank" rel="noopener noreferrer">打开原视频链接</a>
+                    </div>
                     <div class="video-description">
                         <h4>视频介绍</h4>
                         <p id="video-content"></p>
@@ -438,6 +478,8 @@
             </div>
         </div>
     </div>
+
+    <div id="app-toast" class="app-toast" aria-live="polite"></div>
 
     <script src="{{ url_for('static', filename='js/hand-detection.js') }}"></script>
     <script src="{{ url_for('static', filename='js/pose-detection.js') }}"></script>

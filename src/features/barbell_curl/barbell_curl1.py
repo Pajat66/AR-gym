@@ -41,7 +41,7 @@ def map_color(angle, last_feedback, danger_timer, optimal_timer):
         optimal_timer = 0
 
     if feedback != last_feedback:
-        if feedback == "危险范围，注意调整" and danger_timer >= 4:
+        if feedback == "危险范围，注意调整" and danger_timer >= 12:
             speak(feedback)
             last_feedback = feedback
         elif feedback == "最佳幅度，很棒" and optimal_timer >= 10:

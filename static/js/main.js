@@ -14,6 +14,10 @@ let statsChart = null;
 // 当前登录用户信息（从 /api/me 获取）
 let currentUser = null;
 
+// AI虚拟教练上下文
+let aiCoachHistory = [];
+let toastTimer = null;
+
 // 手势虚拟鼠标模式：'gesture' | 'mouse'
 window.handMouseMode = 'gesture';
 // 手势虚拟鼠标开关（根据页面和模式综合决定）
@@ -38,6 +42,24 @@ function speak(text, lang = 'zh-CN') {
 
 // 暴露到全局，供其他模块调用
 window.speak = speak;
+
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('app-toast');
+    if (!toast) {
+        alert(message);
+        return;
+    }
+
+    toast.textContent = message;
+    toast.className = `app-toast show ${type}`;
+
+    if (toastTimer) {
+        clearTimeout(toastTimer);
+    }
+    toastTimer = setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3200);
+}
 
 // 创建手势虚拟鼠标元素，并暴露更新方法
 document.addEventListener('DOMContentLoaded', () => {
@@ -215,7 +237,7 @@ async function submitLogin(event) {
         }
         currentUser = result.data;
         updateAuthUI();
-        alert('登录成功');
+        showToast(`欢迎回来，${currentUser.username}`, 'success');
         loadStats();
         loadHistory();
         loadStatsChart();
@@ -266,7 +288,7 @@ async function submitRegister(event) {
         }
         currentUser = result.data;
         updateAuthUI();
-        alert('注册成功，已自动登录');
+        showToast(`注册成功，欢迎 ${currentUser.username}`, 'success');
         loadStats();
         loadHistory();
         loadStatsChart();
@@ -289,7 +311,7 @@ async function logoutUser() {
     }
     currentUser = null;
     updateAuthUI();
-    alert('已退出登录');
+    showToast('已退出登录', 'info');
 }
 
 // 请求摄像头权限
@@ -547,10 +569,97 @@ function backToHome() {
     currentMenu = null;
 }
 
+function fillAiPrompt(text) {
+    const input = document.getElementById('ai-chat-input');
+    if (!input) return;
+    input.value = text;
+    input.focus();
+}
+
+function appendAiMessage(role, content, isLoading = false) {
+    const messages = document.getElementById('ai-chat-messages');
+    if (!messages) return null;
+
+    const row = document.createElement('div');
+    row.className = `chat-message ${role}`;
+    if (isLoading) row.classList.add('loading-message');
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+    bubble.textContent = content;
+
+    row.appendChild(bubble);
+    messages.appendChild(row);
+    messages.scrollTop = messages.scrollHeight;
+    return row;
+}
+
+async function submitAiCoachMessage(event) {
+    event.preventDefault();
+    const input = document.getElementById('ai-chat-input');
+    const submitBtn = document.getElementById('ai-chat-submit');
+    if (!input) return false;
+
+    const message = input.value.trim();
+    if (!message) {
+        showToast('请输入要咨询的问题', 'warning');
+        return false;
+    }
+
+    appendAiMessage('user', message);
+    input.value = '';
+    const loadingRow = appendAiMessage('assistant', 'AI教练正在分析...', true);
+
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = '思考中';
+    }
+
+    try {
+        const response = await fetch('/api/ai_coach', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message,
+                history: aiCoachHistory
+            })
+        });
+        const result = await response.json();
+
+        if (!result.success) {
+            throw new Error(result.error || 'AI教练暂时无法回复');
+        }
+
+        const reply = result.data.reply || '我暂时没有生成有效回复，请换一种问法试试。';
+        if (loadingRow) {
+            loadingRow.classList.remove('loading-message');
+            const bubble = loadingRow.querySelector('.chat-bubble');
+            if (bubble) bubble.textContent = reply;
+        }
+
+        aiCoachHistory.push({ role: 'user', content: message });
+        aiCoachHistory.push({ role: 'assistant', content: reply });
+        aiCoachHistory = aiCoachHistory.slice(-10);
+    } catch (error) {
+        if (loadingRow) {
+            loadingRow.remove();
+        }
+        appendAiMessage('assistant', `调用失败：${error.message}`);
+        showToast('AI教练调用失败，请稍后重试', 'error');
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '发送';
+        }
+    }
+
+    return false;
+}
+
 // 保存运动数据（需要二次确认，并在保存后结束训练）
 async function saveExerciseData() {
     if (!window.currentExerciseType || !window.exerciseData || window.exerciseData.count === 0) {
-        alert('没有可保存的数据');
+        showToast('没有可保存的数据', 'warning');
         return;
     }
 
@@ -566,7 +675,7 @@ async function saveExerciseData() {
         if (typeof window.speak === 'function') {
             window.speak('再次点击保存数据将结束本次训练');
         }
-        alert('再次点击“保存数据”将保存本次训练并结束训练');
+        showToast('再次点击“保存数据”将保存本次训练并结束训练', 'warning');
         return;
     }
 
@@ -595,7 +704,7 @@ async function saveExerciseData() {
         });
         
         if (response.status === 401) {
-            alert('请先登录后再保存训练数据');
+            showToast('请先登录后再保存训练数据', 'warning');
             toggleAuthPanel(true);
             showPage('home');
             return;
@@ -604,7 +713,7 @@ async function saveExerciseData() {
         const result = await response.json();
         
         if (result.success) {
-            alert('数据保存成功！');
+            showToast('数据保存成功，本次训练已结束', 'success');
             if (typeof window.speak === 'function') {
                 window.speak('数据保存成功，本次训练已结束');
             }
@@ -615,10 +724,10 @@ async function saveExerciseData() {
             stopTraining();
             backToHome();
         } else {
-            alert('保存失败: ' + result.error);
+            showToast('保存失败: ' + result.error, 'error');
         }
     } catch (error) {
-        alert('保存失败: ' + error.message);
+        showToast('保存失败: ' + error.message, 'error');
     }
 }
 
@@ -836,7 +945,7 @@ async function loadVideos() {
         } else {
             const container = document.getElementById('videos-container');
             if (container) {
-                container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">暂无视频</p>';
+                container.innerHTML = `<p style="text-align: center; color: var(--danger-color);">视频加载失败：${escapeHtml(result.error || '暂无视频')}</p>`;
             }
         }
     } catch (error) {
@@ -849,6 +958,22 @@ async function loadVideos() {
 }
 
 // 显示视频列表
+function getVideoPlaceholder(title = '视频封面') {
+    const safeTitle = escapeHtml(title || '视频封面');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#07111f"/><stop offset="1" stop-color="#1e3a4a"/></linearGradient></defs><rect fill="url(#g)" width="640" height="360"/><circle cx="320" cy="150" r="44" fill="#2dd4bf" opacity=".9"/><path d="M306 126v48l42-24z" fill="#07111f"/><text x="320" y="250" fill="#cbd5e1" font-size="24" font-family="Arial, sans-serif" text-anchor="middle">${safeTitle}</text></svg>`;
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[char]));
+}
+
 function displayVideos(videos) {
     const container = document.getElementById('videos-container');
     if (!container) return;
@@ -858,20 +983,27 @@ function displayVideos(videos) {
         return;
     }
     
-    container.innerHTML = videos.map(video => `
-        <div class="video-card" onclick="playVideo(${video.Video_ID})">
-            <img src="${video.Video_Image_URL || ''}" alt="${video.Title}" class="video-thumbnail" 
-                 onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'300\' height=\'200\'%3E%3Crect fill=\'%231e293b\' width=\'300\' height=\'200\'/%3E%3Ctext fill=\'%23cbd5e1\' x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\'%3E视频封面%3C/text%3E%3C/svg%3E'">
+    container.innerHTML = videos.map(video => {
+        const videoId = Number(video.Video_ID);
+        if (!Number.isFinite(videoId)) return '';
+        return `
+        <div class="video-card" onclick="playVideo(${videoId})">
+            <img src="${escapeHtml(video.Video_Image_URL || getVideoPlaceholder(video.Title))}"
+                 alt="${escapeHtml(video.Title)}"
+                 class="video-thumbnail"
+                 referrerpolicy="no-referrer"
+                 onerror="this.onerror=null; this.src='${getVideoPlaceholder()}';">
             <div class="video-card-content">
-                <h4 class="video-card-title">${video.Title}</h4>
+                <h4 class="video-card-title">${escapeHtml(video.Title)}</h4>
                 <div class="video-card-meta">
-                    <span>⏱️ ${video.Estimated_Time}分钟</span>
-                    <span>🔥 ${video.Estimated_Calories}卡</span>
+                    <span>⏱️ ${escapeHtml(video.Estimated_Time)}分钟</span>
+                    <span>🔥 ${escapeHtml(video.Estimated_Calories)}卡</span>
                     <span>⭐ ${video.StarCount || 0}</span>
                 </div>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // 播放视频
@@ -885,6 +1017,8 @@ async function playVideo(videoId) {
             const modal = document.getElementById('video-modal');
             const player = document.getElementById('video-player');
             const source = document.getElementById('video-source');
+            const fallback = document.getElementById('video-fallback');
+            const openLink = document.getElementById('video-open-link');
             
             // 设置视频信息
             document.getElementById('video-modal-title').textContent = video.Title;
@@ -895,8 +1029,19 @@ async function playVideo(videoId) {
             document.getElementById('video-coach').textContent = video.Coach_Name ? `👨‍🏫 ${video.Coach_Name}` : '';
             
             // 设置视频源
-            source.src = video.Video_URL;
-            player.load();
+            const videoUrl = video.Video_URL || '';
+            source.src = videoUrl;
+            if (openLink) openLink.href = videoUrl || '#';
+            if (fallback) fallback.style.display = videoUrl ? 'none' : 'block';
+            if (player) {
+                player.onerror = function() {
+                    if (fallback) fallback.style.display = 'block';
+                };
+                player.oncanplay = function() {
+                    if (fallback) fallback.style.display = 'none';
+                };
+                player.load();
+            }
             
             // 显示模态框
             modal.style.display = 'block';
@@ -913,7 +1058,9 @@ async function playVideo(videoId) {
 function closeVideoModal() {
     const modal = document.getElementById('video-modal');
     const player = document.getElementById('video-player');
+    const fallback = document.getElementById('video-fallback');
     if (modal) modal.style.display = 'none';
+    if (fallback) fallback.style.display = 'none';
     if (player) {
         player.pause();
         player.currentTime = 0;

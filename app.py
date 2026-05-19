@@ -3,6 +3,14 @@ from flask_cors import CORS
 import pymysql
 from datetime import datetime
 import json
+import base64
+import hashlib
+import hmac
+import os
+import ssl
+from time import mktime
+from urllib.parse import urlencode, urljoin, urlparse
+from wsgiref.handlers import format_date_time
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
@@ -12,7 +20,7 @@ CORS(app)
 # 数据库配置
 # 根据MySQL用户列表，project@% 用户有远程访问权限
 DB_CONFIG = {
-    'host': '192.168.119.117',
+    'host': '10.177.49.165',
     'port': 3306,
     'user': 'project',  # 使用project用户（有%权限，可从任何主机连接）
     'password': 'Zbp42682600',
@@ -22,7 +30,7 @@ DB_CONFIG = {
 
 # 备用配置1：尝试使用Zbp42682600用户（如果存在）
 DB_CONFIG_ZBP = {
-    'host': '192.168.119.117',
+    'host': '10.177.49.165',
     'port': 3306,
     'user': 'Zbp42682600',
     'password': 'Zbp42682600',
@@ -38,6 +46,16 @@ DB_CONFIG_ROOT = {
     'password': 'Zbp42682600',
     'database': 'exercise',
     'charset': 'utf8mb4'
+}
+
+SPARK_CONFIG = {
+    'appid': os.environ.get('SPARK_APPID', 'b13faa35'),
+    'api_secret': os.environ.get('SPARK_API_SECRET', 'MmNlYmU4NGQ3NWIzYzdkN2I2ZTMxNjU4'),
+    'api_key': os.environ.get('SPARK_API_KEY', '2156fa2aed34b9247b9e553202d17508'),
+    'host': 'spark-api.xf-yun.com',
+    # Spark Lite 固定使用 v1.1/chat + lite，避免被旧环境变量覆盖成 v3.5/generalv3.5。
+    'path': '/v1.1/chat',
+    'domain': 'lite'
 }
 
 def get_db_connection():
@@ -175,6 +193,210 @@ def init_database():
         return False
     finally:
         connection.close()
+
+def build_spark_auth_url():
+    """生成讯飞星火 WebSocket 鉴权地址。"""
+    request_url = f"wss://{SPARK_CONFIG['host']}{SPARK_CONFIG['path']}"
+    parsed_url = urlparse(request_url)
+    # 讯飞示例使用 RFC1123 时间戳，保持签名串完全一致。
+    now = datetime.now()
+    date = format_date_time(mktime(now.timetuple()))
+    signature_origin = f"host: {parsed_url.netloc}\ndate: {date}\nGET {parsed_url.path} HTTP/1.1"
+    signature_sha = hmac.new(
+        SPARK_CONFIG['api_secret'].encode('utf-8'),
+        signature_origin.encode('utf-8'),
+        digestmod=hashlib.sha256
+    ).digest()
+    signature = base64.b64encode(signature_sha).decode('utf-8')
+    authorization_origin = (
+        f'api_key="{SPARK_CONFIG["api_key"]}", algorithm="hmac-sha256", '
+        f'headers="host date request-line", signature="{signature}"'
+    )
+    authorization = base64.b64encode(authorization_origin.encode('utf-8')).decode('utf-8')
+    query = urlencode({
+        'authorization': authorization,
+        'date': date,
+        'host': parsed_url.netloc
+    })
+    return f"{request_url}?{query}"
+
+def ask_spark_coach(messages):
+    """调用讯飞星火 Lite WebSocket 接口并返回完整文本回复。"""
+    try:
+        import websocket
+    except ImportError as exc:
+        raise RuntimeError('缺少 websocket-client 依赖，请先执行 pip install -r requirements.txt') from exc
+
+    system_prompts = [item.get('content', '') for item in messages if item.get('role') == 'system']
+    spark_messages = []
+    for item in messages:
+        role = item.get('role')
+        content = (item.get('content') or '').strip()
+        if role not in ('user', 'assistant') or not content:
+            continue
+        spark_messages.append({'role': role, 'content': content})
+
+    if system_prompts and spark_messages:
+        spark_messages[0]['content'] = f"{' '.join(system_prompts)}\n\n用户问题：{spark_messages[0]['content']}"
+
+    payload = {
+        'header': {
+            'app_id': SPARK_CONFIG['appid'],
+            'uid': 'argym_user'
+        },
+        'parameter': {
+            'chat': {
+                'domain': SPARK_CONFIG['domain'],
+                'temperature': 0.5,
+                'max_tokens': 4096,
+                'top_k': 4
+            }
+        },
+        'payload': {
+            'message': {
+                'text': spark_messages
+            }
+        }
+    }
+
+    ws = None
+    try:
+        websocket.enableTrace(False)
+        ws = websocket.create_connection(
+            build_spark_auth_url(),
+            timeout=30,
+            sslopt={'cert_reqs': ssl.CERT_NONE}
+        )
+        ws.send(json.dumps(payload, ensure_ascii=False))
+
+        answer_parts = []
+        while True:
+            response = json.loads(ws.recv())
+            header = response.get('header', {})
+            code = header.get('code', 0)
+            if code != 0:
+                raise RuntimeError(f"讯飞星火WebSocket Lite错误 {code}: {header.get('message') or response}")
+
+            choices = response.get('payload', {}).get('choices', {})
+            for item in choices.get('text', []):
+                answer_parts.append(item.get('content', ''))
+
+            if choices.get('status') == 2:
+                break
+
+        answer = ''.join(answer_parts).strip()
+        if not answer:
+            raise RuntimeError('讯飞星火没有返回有效内容')
+        return answer
+    finally:
+        if ws:
+            ws.close()
+
+def normalize_media_url(value):
+    """把数据库里的视频/封面地址规范成浏览器可直接请求的 URL。"""
+    if value is None:
+        return ''
+
+    url = str(value).strip()
+    if not url:
+        return ''
+
+    if url.startswith(('http://', 'https://', 'data:', 'blob:')):
+        return url
+
+    if url.startswith('//'):
+        return f'https:{url}'
+
+    if url.startswith(('www.', 'm.', 'static.')):
+        return f'https://{url}'
+
+    # 兼容数据库中保存 static/xxx、/static/xxx 或 media/xxx 这类相对路径的情况。
+    normalized_path = url.replace('\\', '/')
+    return urljoin(request.host_url, normalized_path.lstrip('/'))
+
+def normalize_video_record(record):
+    if not record:
+        return record
+
+    record['Video_URL'] = normalize_media_url(record.get('Video_URL'))
+    record['Video_Image_URL'] = normalize_media_url(record.get('Video_Image_URL'))
+    record['Video_ID'] = record.get('Video_ID') or record.get('Vid') or record.get('id')
+    record['Estimated_Time'] = record.get('Estimated_Time') or 0
+    record['Estimated_Calories'] = record.get('Estimated_Calories') or 0
+    record['StarCount'] = record.get('StarCount') or 0
+    record['Content'] = record.get('Content') or ''
+    record['Suitable_People'] = record.get('Suitable_People') or '所有人'
+    record['Coach_Name'] = record.get('Coach_Name') or ''
+    return record
+
+def get_table_columns(cursor, table_name):
+    cursor.execute(f"SHOW COLUMNS FROM `{table_name}`")
+    return {row['Field'] for row in cursor.fetchall()}
+
+def pick_column(columns, *candidates):
+    for name in candidates:
+        if name in columns:
+            return name
+    return None
+
+def build_video_select(columns):
+    """兼容 Vid/Video_ID 等不同字段命名，避免某个可选字段缺失导致整页视频加载失败。"""
+    mapping = {
+        'Video_ID': pick_column(columns, 'Video_ID', 'Vid', 'id'),
+        'Title': pick_column(columns, 'Title', 'title', 'Name', 'Video_Title'),
+        'Content': pick_column(columns, 'Content', 'content', 'Description', 'Video_Content'),
+        'Video_URL': pick_column(columns, 'Video_URL', 'video_url', 'Url', 'URL'),
+        'Video_Image_URL': pick_column(columns, 'Video_Image_URL', 'video_image_url', 'Image_URL', 'Cover_URL'),
+        'Estimated_Time': pick_column(columns, 'Estimated_Time', 'estimated_time', 'Duration'),
+        'Estimated_Calories': pick_column(columns, 'Estimated_Calories', 'estimated_calories', 'Calories'),
+        'Suitable_People': pick_column(columns, 'Suitable_People', 'suitable_people'),
+        'StarCount': pick_column(columns, 'StarCount', 'star_count', 'Stars'),
+        'Completion_Rate': pick_column(columns, 'Completion_Rate', 'completion_rate'),
+        'Created_Time': pick_column(columns, 'Created_Time', 'created_time', 'created_at')
+    }
+
+    required = ['Video_ID', 'Title', 'Video_URL']
+    missing = [name for name in required if not mapping[name]]
+    if missing:
+        raise RuntimeError(f"视频表缺少必要字段: {', '.join(missing)}")
+
+    select_parts = []
+    for alias, column in mapping.items():
+        if column:
+            select_parts.append(f"`{column}` AS `{alias}`")
+        else:
+            select_parts.append(f"NULL AS `{alias}`")
+
+    order_column = mapping.get('StarCount') or mapping.get('Created_Time') or mapping['Video_ID']
+    return ',\n                    '.join(select_parts), mapping['Video_ID'], order_column, mapping['Video_URL']
+
+def fetch_video_rows(cursor, limit):
+    """根据真实表字段动态读取教学视频列表。"""
+    columns = get_table_columns(cursor, 'teachingvideos_teaching_video')
+    select_sql, _, order_column, video_url_column = build_video_select(columns)
+    sql = f"""
+        SELECT
+            {select_sql}
+        FROM teachingvideos_teaching_video
+        WHERE `{video_url_column}` IS NOT NULL AND `{video_url_column}` <> ''
+        ORDER BY `{order_column}` DESC
+        LIMIT %s
+    """
+    cursor.execute(sql, (limit,))
+    return cursor.fetchall()
+
+def fetch_video_row(cursor, video_id):
+    """根据真实表字段动态读取单条教学视频。"""
+    columns = get_table_columns(cursor, 'teachingvideos_teaching_video')
+    select_sql, id_column, _, _ = build_video_select(columns)
+    sql = f"""
+        SELECT
+            {select_sql}
+        FROM teachingvideos_teaching_video
+        WHERE `{id_column}` = %s
+    """
+    cursor.execute(sql, (video_id,))
+    return cursor.fetchone()
 
 @app.route('/')
 def index():
@@ -413,6 +635,36 @@ def get_history():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/ai_coach', methods=['POST'])
+def ai_coach():
+    """AI虚拟教练对话接口，服务端代理讯飞星火，避免密钥暴露到前端。"""
+    try:
+        data = request.json or {}
+        message = (data.get('message') or '').strip()
+        history = data.get('history') or []
+
+        if not message:
+            return jsonify({'success': False, 'error': '请输入想咨询的问题'}), 400
+
+        system_prompt = (
+            '你是 AR健身教练 应用里的AI虚拟教练。请用中文回答，语气专业、简洁、鼓励但不过度夸张。'
+            '你的建议应围绕健身动作规范、训练计划、热身拉伸、训练安全和恢复。'
+            '涉及疼痛、损伤、疾病或高风险症状时，提醒用户停止训练并咨询医生。'
+        )
+        messages = [{'role': 'system', 'content': system_prompt}]
+
+        for item in history[-8:]:
+            role = item.get('role')
+            content = (item.get('content') or '').strip()
+            if role in ('user', 'assistant') and content:
+                messages.append({'role': role, 'content': content[:1200]})
+
+        messages.append({'role': 'user', 'content': message[:2000]})
+        reply = ask_spark_coach(messages)
+        return jsonify({'success': True, 'data': {'reply': reply}})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/get_videos', methods=['GET'])
 def get_videos():
     """获取教学视频列表"""
@@ -424,25 +676,9 @@ def get_videos():
             return jsonify({'success': False, 'error': '数据库连接失败'}), 500
         
         with connection.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = """
-                SELECT 
-                    Video_ID,
-                    Title,
-                    Content,
-                    Video_URL,
-                    Video_Image_URL,
-                    Estimated_Time,
-                    Estimated_Calories,
-                    Suitable_People,
-                    StarCount,
-                    Completion_Rate,
-                    Created_Time
-                FROM teachingvideos_teaching_video
-                ORDER BY StarCount DESC, Created_Time DESC
-                LIMIT %s
-            """
-            cursor.execute(sql, (limit,))
-            videos = cursor.fetchall()
+            videos = fetch_video_rows(cursor, limit)
+            for video in videos:
+                normalize_video_record(video)
         
         connection.close()
         return jsonify({'success': True, 'data': videos})
@@ -458,26 +694,8 @@ def get_video(video_id):
             return jsonify({'success': False, 'error': '数据库连接失败'}), 500
         
         with connection.cursor(pymysql.cursors.DictCursor) as cursor:
-            sql = """
-                SELECT 
-                    v.Video_ID,
-                    v.Title,
-                    v.Content,
-                    v.Video_URL,
-                    v.Video_Image_URL,
-                    v.Estimated_Time,
-                    v.Estimated_Calories,
-                    v.Suitable_People,
-                    v.StarCount,
-                    v.Completion_Rate,
-                    v.Created_Time,
-                    c.Name as Coach_Name
-                FROM teachingvideos_teaching_video v
-                LEFT JOIN teachingvideos_coach c ON v.Coach_ID_id = c.Coach_ID
-                WHERE v.Video_ID = %s
-            """
-            cursor.execute(sql, (video_id,))
-            video = cursor.fetchone()
+            video = fetch_video_row(cursor, video_id)
+            normalize_video_record(video)
         
         connection.close()
         

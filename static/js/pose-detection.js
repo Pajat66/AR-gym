@@ -55,6 +55,11 @@ function onPoseResults(results) {
     const canvas = document.getElementById('training_canvas');
     const ctx = canvas.getContext('2d');
     
+    // 如果训练已停止或尚未选择训练类型，则忽略后续结果，避免误触发语音和计数
+    if (!isTrainingActive || !currentExerciseType) {
+        return;
+    }
+
     if (!video || !canvas) return;
     
     // 确保canvas尺寸与video匹配
@@ -334,35 +339,44 @@ function detectReverseCrunch(angle) {
 
 // 动作规范性语音反馈状态
 const feedbackState = {
-    pushup: { lastFeedback: '', dangerTimer: 0, optimalTimer: 0 },
-    squat: { lastFeedback: '', dangerTimer: 0, optimalTimer: 0 },
-    barbell_curl_left: { lastFeedback: '', dangerTimer: 0, optimalTimer: 0 },
-    barbell_curl_right: { lastFeedback: '', dangerTimer: 0, optimalTimer: 0 },
-    barbell_sit_left: { lastFeedback: '', dangerTimer: 0, optimalTimer: 0 },
-    barbell_sit_right: { lastFeedback: '', dangerTimer: 0, optimalTimer: 0 },
-    reverse_crunch: { lastFeedback: '', dangerTimer: 0, optimalTimer: 0 }
+    pushup: { lastFeedback: '', lastSpeakTime: 0, currentBand: null, bandStartTime: 0 },
+    squat: { lastFeedback: '', lastSpeakTime: 0, currentBand: null, bandStartTime: 0 },
+    barbell_curl_left: { lastFeedback: '', lastSpeakTime: 0, currentBand: null, bandStartTime: 0 },
+    barbell_curl_right: { lastFeedback: '', lastSpeakTime: 0, currentBand: null, bandStartTime: 0 },
+    barbell_sit_left: { lastFeedback: '', lastSpeakTime: 0, currentBand: null, bandStartTime: 0 },
+    barbell_sit_right: { lastFeedback: '', lastSpeakTime: 0, currentBand: null, bandStartTime: 0 },
+    reverse_crunch: { lastFeedback: '', lastSpeakTime: 0, currentBand: null, bandStartTime: 0 }
 };
 
 function provideExerciseFeedback(exerciseType, angle) {
+    // 未在训练中或角度无效时不提示
+    if (!isTrainingActive || !currentExerciseType) return;
     if (!angle || angle <= 0) return;
     if (typeof window.speak !== 'function') return;
     const state = feedbackState[exerciseType];
     if (!state) return;
 
-    // 不同动作的角度范围设置（参考原Python实现）
+    const now = Date.now();
+    // 任意两次语音提示之间至少间隔 8 秒，避免过于频繁
+    const MIN_INTERVAL_MS = 8000;
+    if (now - state.lastSpeakTime < MIN_INTERVAL_MS) {
+        return;
+    }
+
+    // 不同动作的角度范围设置（参考原Python实现，并略作调整）
     let min = 0, max = 180, optimalMin = 0, optimalMax = 180;
     switch (exerciseType) {
         case 'pushup':
-            min = PUSHUP_MIN;
-            max = PUSHUP_MAX;
-            optimalMin = 60;
+            min = PUSHUP_MIN;      // 40
+            max = PUSHUP_MAX;      // 130
+            optimalMin = 60;       // 建议发力区间
             optimalMax = 110;
             break;
         case 'squat':
-            min = SQUAT_MIN;
-            max = SQUAT_MAX;
-            optimalMin = 40;
-            optimalMax = 90;
+            min = SQUAT_MIN;       // 50
+            max = SQUAT_MAX;       // 120
+            optimalMin = 60;       // 稍微下蹲即可
+            optimalMax = 100;
             break;
         case 'barbell_curl_left':
         case 'barbell_curl_right':
@@ -379,45 +393,58 @@ function provideExerciseFeedback(exerciseType, angle) {
             optimalMax = SIT_OPTIMAL_MAX;
             break;
         case 'reverse_crunch':
-            min = CRUNCH_MIN;
-            max = CRUNCH_MAX;
-            optimalMin = CRUNCH_OPTIMAL_MIN;
-            optimalMax = CRUNCH_OPTIMAL_MAX;
+            min = CRUNCH_MIN;          // 40
+            max = CRUNCH_MAX;          // 90
+            optimalMin = CRUNCH_OPTIMAL_MIN;   // 50
+            optimalMax = CRUNCH_OPTIMAL_MAX;   // 80
             break;
         default:
             return;
     }
 
+    // 根据当前角度划分区间：danger / optimal / middle
+    let band = null;
+    if (angle < min || angle > max) {
+        band = 'danger';
+    } else if (angle >= optimalMin && angle <= optimalMax) {
+        band = 'optimal';
+    } else {
+        band = 'middle';
+    }
+
+    // 如果区间发生变化，重置计时
+    if (state.currentBand !== band) {
+        state.currentBand = band;
+        state.bandStartTime = now;
+        return;
+    }
+
+    const holdMs = now - state.bandStartTime;
+    // 各区间需要保持的最少时间（毫秒）
+    const DANGER_HOLD_MS = 800;   // 危险区域至少 0.8 秒
+    const OPTIMAL_HOLD_MS = 1500; // 最佳区域至少 1.5 秒
+    const MIDDLE_HOLD_MS = 1200;  // 注意区域至少 1.2 秒
+
     let feedback = '';
 
-    if (angle < min || angle > max) {
+    if (band === 'danger' && holdMs >= DANGER_HOLD_MS) {
         feedback = '危险范围，注意调整';
-        state.dangerTimer += 1;
-        state.optimalTimer = 0;
-    } else if (angle >= optimalMin && angle <= optimalMax) {
+    } else if (band === 'optimal' && holdMs >= OPTIMAL_HOLD_MS) {
         feedback = '动作幅度很好';
-        state.optimalTimer += 1;
-        state.dangerTimer = 0;
-    } else {
+    } else if (band === 'middle' && holdMs >= MIDDLE_HOLD_MS) {
         feedback = '注意动作幅度';
-        state.dangerTimer = 0;
-        state.optimalTimer = 0;
+    } else {
+        return; // 停留时间不够，不提示
     }
 
-    // 控制提示频率，避免过于频繁
-    if (feedback === '危险范围，注意调整' && state.dangerTimer === 10 && state.lastFeedback !== feedback) {
-        window.speak(feedback);
-        state.lastFeedback = feedback;
-    } else if (feedback === '动作幅度很好' && state.optimalTimer === 20 && state.lastFeedback !== feedback) {
-        window.speak(feedback);
-        state.lastFeedback = feedback;
-    } else if (feedback === '注意动作幅度' && state.lastFeedback !== feedback) {
-        // 提醒类提示频率略低一些
-        state.optimalTimer = 0;
-        state.dangerTimer = 0;
-        window.speak(feedback);
-        state.lastFeedback = feedback;
+    // 避免同一个提示在短时间内重复播放
+    if (feedback === state.lastFeedback && now - state.lastSpeakTime < MIN_INTERVAL_MS * 2) {
+        return;
     }
+
+    window.speak(feedback);
+    state.lastFeedback = feedback;
+    state.lastSpeakTime = now;
 }
 
 let lastFpsTime = Date.now();
@@ -518,6 +545,15 @@ function stopTraining() {
     isTrainingActive = false;
     currentExerciseType = null;
 
+    // 立即停止所有尚未播完的语音提示，避免训练结束后仍继续播报
+    try {
+        if (window.speechSynthesis && typeof window.speechSynthesis.cancel === 'function') {
+            window.speechSynthesis.cancel();
+        }
+    } catch (e) {
+        console.warn('停止语音失败:', e);
+    }
+
     // 重置训练数据并同步到全局，避免下次训练复用旧状态
     exerciseData = {
         count: 0,
@@ -527,6 +563,14 @@ function stopTraining() {
     };
     window.currentExerciseType = null;
     window.exerciseData = exerciseData;
+
+    // 重置反馈状态，避免上一次训练的计时影响下一次
+    Object.keys(feedbackState).forEach(key => {
+        feedbackState[key].lastFeedback = '';
+        feedbackState[key].lastSpeakTime = 0;
+        feedbackState[key].currentBand = null;
+        feedbackState[key].bandStartTime = 0;
+    });
 
     // 训练结束后恢复手部检测和手势鼠标（如果处于鼠标模式）
     if (typeof startHandDetection === 'function') {

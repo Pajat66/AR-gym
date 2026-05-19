@@ -893,6 +893,22 @@ body {
     margin: 10px 0;
 }
 
+.video-fallback {
+    margin: 12px 0 18px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(245, 158, 11, 0.38);
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.video-fallback a {
+    color: var(--primary-color);
+    font-weight: 700;
+    margin-left: 6px;
+}
+
 /* 训练信息 */
 .training-info {
     text-align: center;
@@ -929,5 +945,460 @@ body {
 .btn-start-training:hover {
     transform: scale(1.05);
     box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
+}
+
+/* 视觉升级 */
+:root {
+    --primary-color: #2dd4bf;
+    --secondary-color: #38bdf8;
+    --accent-color: #f97316;
+    --bg-color: #07111f;
+    --card-bg: rgba(15, 23, 42, 0.78);
+    --surface-soft: rgba(30, 41, 59, 0.72);
+    --border-soft: rgba(148, 163, 184, 0.22);
+    --text-primary: #f8fafc;
+    --text-secondary: #b6c2d4;
+    --success-color: #22c55e;
+    --warning-color: #f59e0b;
+    --danger-color: #f43f5e;
+    --gradient-1: linear-gradient(135deg, #2dd4bf 0%, #38bdf8 48%, #818cf8 100%);
+    --gradient-2: linear-gradient(135deg, #fb7185 0%, #f97316 100%);
+    --gradient-3: linear-gradient(135deg, #22c55e 0%, #2dd4bf 100%);
+}
+
+body {
+    background:
+        radial-gradient(circle at 10% 10%, rgba(45, 212, 191, 0.16), transparent 32rem),
+        radial-gradient(circle at 90% 5%, rgba(249, 115, 22, 0.13), transparent 28rem),
+        linear-gradient(135deg, #07111f 0%, #0f172a 55%, #101827 100%);
+    letter-spacing: 0;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 46px 46px;
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.75), transparent 78%);
+}
+
+.header {
+    position: sticky;
+    top: 12px;
+    z-index: 100;
+    padding: 14px 18px;
+    border: 1px solid var(--border-soft);
+    border-radius: 18px;
+    background: rgba(7, 17, 31, 0.82);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+}
+
+.logo h1,
+.hero-title,
+.exercise-header h2,
+.stats-container h2,
+.history-container h2,
+.ai-coach-hero h2 {
+    background: var(--gradient-1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.nav-btn,
+.btn-back,
+.auth-tab,
+.ai-quick-prompts button {
+    border-radius: 999px;
+}
+
+.nav-btn {
+    border: 1px solid var(--border-soft);
+    background: rgba(15, 23, 42, 0.64);
+}
+
+.nav-btn:hover {
+    background: rgba(45, 212, 191, 0.18);
+    border-color: rgba(45, 212, 191, 0.62);
+    box-shadow: 0 10px 28px rgba(45, 212, 191, 0.22);
+}
+
+.hero-section,
+.exercise-container,
+.stats-container,
+.history-container,
+.ai-coach-container {
+    animation: riseIn 0.55s ease both;
+}
+
+@keyframes riseIn {
+    from {
+        opacity: 0;
+        transform: translateY(18px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.exercise-card,
+.menu-section,
+.video-container,
+.stat-item,
+.history-item,
+.auth-panel,
+.training-info,
+.modal-content,
+.ai-chat-shell,
+.ai-coach-hero {
+    border: 1px solid var(--border-soft);
+    background: var(--card-bg);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 20px 70px rgba(2, 6, 23, 0.34);
+}
+
+.exercise-card,
+.menu-section,
+.video-container,
+.training-info,
+.auth-panel,
+.modal-content {
+    border-radius: 18px;
+}
+
+.exercise-card:hover,
+.stat-item:hover,
+.history-item:hover {
+    border-color: rgba(45, 212, 191, 0.68);
+    box-shadow: 0 18px 50px rgba(45, 212, 191, 0.16);
+}
+
+.exercise-card::before {
+    background: linear-gradient(135deg, rgba(45, 212, 191, 0.32), rgba(249, 115, 22, 0.18));
+}
+
+.menu-item {
+    background: rgba(45, 212, 191, 0.08);
+    border-color: rgba(45, 212, 191, 0.34);
+}
+
+.menu-item:hover {
+    background: rgba(45, 212, 191, 0.18);
+    box-shadow: 0 12px 34px rgba(45, 212, 191, 0.2);
+}
+
+.menu-number,
+.btn-primary,
+.btn-start-training {
+    background: var(--gradient-1);
+    color: #04111d;
+}
+
+.btn-primary,
+.btn-start-training,
+.btn-save,
+.btn-stop {
+    box-shadow: 0 10px 28px rgba(45, 212, 191, 0.22);
+}
+
+.btn-primary:hover,
+.btn-start-training:hover {
+    box-shadow: 0 16px 42px rgba(45, 212, 191, 0.3);
+}
+
+.stat-card,
+.gesture-hint {
+    background: rgba(2, 6, 23, 0.7);
+    border-color: rgba(45, 212, 191, 0.42);
+}
+
+.auth-field input,
+.ai-chat-form textarea {
+    border: 1px solid var(--border-soft);
+    background: rgba(2, 6, 23, 0.56);
+}
+
+.auth-field input:focus,
+.ai-chat-form textarea:focus {
+    border-color: rgba(45, 212, 191, 0.78);
+    box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14);
+}
+
+.app-toast {
+    position: fixed;
+    top: 22px;
+    right: 22px;
+    z-index: 3000;
+    min-width: 220px;
+    max-width: min(420px, calc(100vw - 44px));
+    padding: 14px 18px;
+    border-radius: 14px;
+    border: 1px solid var(--border-soft);
+    background: rgba(7, 17, 31, 0.92);
+    color: var(--text-primary);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+    opacity: 0;
+    transform: translateY(-12px);
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.app-toast.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.app-toast.success {
+    border-color: rgba(34, 197, 94, 0.62);
+}
+
+.app-toast.warning {
+    border-color: rgba(245, 158, 11, 0.72);
+}
+
+.app-toast.error {
+    border-color: rgba(244, 63, 94, 0.72);
+}
+
+.app-toast.info {
+    border-color: rgba(56, 189, 248, 0.62);
+}
+
+/* AI虚拟教练 */
+.ai-coach-container {
+    max-width: 1120px;
+    margin: 0 auto;
+}
+
+.ai-coach-hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 28px;
+    align-items: center;
+    padding: 34px;
+    border-radius: 20px;
+    margin-bottom: 24px;
+    overflow: hidden;
+}
+
+.section-kicker {
+    display: inline-flex;
+    margin-bottom: 10px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(45, 212, 191, 0.42);
+    color: var(--primary-color);
+    background: rgba(45, 212, 191, 0.08);
+    font-size: 0.85rem;
+}
+
+.ai-coach-hero h2 {
+    font-size: clamp(2rem, 5vw, 4rem);
+    line-height: 1;
+    margin-bottom: 14px;
+}
+
+.ai-coach-hero p {
+    max-width: 620px;
+    color: var(--text-secondary);
+    font-size: 1.05rem;
+    line-height: 1.7;
+}
+
+.coach-orbit {
+    position: relative;
+    width: 148px;
+    height: 148px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: conic-gradient(from 180deg, rgba(45, 212, 191, 0.1), rgba(56, 189, 248, 0.85), rgba(249, 115, 22, 0.8), rgba(45, 212, 191, 0.1));
+    animation: orbitSpin 7s linear infinite;
+}
+
+.coach-avatar {
+    width: 112px;
+    height: 112px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: #07111f;
+    color: var(--primary-color);
+    font-size: 2.4rem;
+    font-weight: 800;
+    box-shadow: inset 0 0 28px rgba(45, 212, 191, 0.28);
+}
+
+@keyframes orbitSpin {
+    to { transform: rotate(360deg); }
+}
+
+.ai-chat-shell {
+    border-radius: 20px;
+    padding: 22px;
+}
+
+.ai-chat-messages {
+    min-height: 360px;
+    max-height: 520px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 8px 6px 18px;
+}
+
+.chat-message {
+    display: flex;
+}
+
+.chat-message.user {
+    justify-content: flex-end;
+}
+
+.chat-bubble {
+    max-width: min(720px, 86%);
+    padding: 14px 16px;
+    border-radius: 16px;
+    line-height: 1.7;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+}
+
+.chat-message.assistant .chat-bubble {
+    background: rgba(15, 23, 42, 0.86);
+    border: 1px solid rgba(45, 212, 191, 0.2);
+}
+
+.chat-message.user .chat-bubble {
+    background: linear-gradient(135deg, rgba(45, 212, 191, 0.96), rgba(56, 189, 248, 0.92));
+    color: #04111d;
+    font-weight: 600;
+}
+
+.loading-message .chat-bubble::after {
+    content: '';
+    display: inline-block;
+    width: 0.8em;
+    height: 0.8em;
+    margin-left: 8px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    animation: pulseDot 0.9s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+    0%, 100% { opacity: 0.35; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.05); }
+}
+
+.ai-chat-form {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: end;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-soft);
+}
+
+.ai-chat-form textarea {
+    width: 100%;
+    min-height: 54px;
+    max-height: 160px;
+    resize: vertical;
+    padding: 13px 14px;
+    border-radius: 14px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.ai-chat-form button {
+    min-width: 96px;
+    height: 54px;
+}
+
+.ai-chat-form button:disabled {
+    opacity: 0.62;
+    cursor: wait;
+}
+
+.ai-quick-prompts {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+}
+
+.ai-quick-prompts button {
+    padding: 8px 12px;
+    border: 1px solid rgba(45, 212, 191, 0.28);
+    background: rgba(45, 212, 191, 0.08);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.ai-quick-prompts button:hover {
+    color: var(--text-primary);
+    border-color: rgba(45, 212, 191, 0.6);
+    background: rgba(45, 212, 191, 0.16);
+}
+
+@media (max-width: 900px) {
+    .header {
+        position: static;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 14px;
+    }
+
+    .nav,
+    .auth-status {
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .ai-coach-hero {
+        align-items: flex-start;
+    }
+}
+
+@media (max-width: 640px) {
+    .container {
+        padding: 12px;
+    }
+
+    .ai-coach-hero {
+        flex-direction: column;
+        padding: 24px;
+    }
+
+    .coach-orbit {
+        width: 116px;
+        height: 116px;
+    }
+
+    .coach-avatar {
+        width: 88px;
+        height: 88px;
+        font-size: 1.8rem;
+    }
+
+    .ai-chat-form {
+        grid-template-columns: 1fr;
+    }
+
+    .ai-chat-form button {
+        width: 100%;
+    }
 }
 

@@ -1,7 +1,19 @@
 # List your project dependencies here
-opencv-python==4.5.3
-numpy==1.21.0
-pillow==8.3.1
+opencv-python==4.5.3.56
+numpy==1.26.4
+pillow==10.2.0
 pyttsx3==2.90
+<<<<<<< Updated upstream
 mediapipe==0.8.9
 autopy==0.3.0
+=======
+mediapipe==0.10.14
+autopy==0.5.1
+
+# Web应用依赖
+Flask==2.3.3
+Flask-CORS==4.0.0
+pymysql==1.1.0
+cryptography==41.0.7
+websocket-client==1.7.0
+>>>>>>> Stashed changes

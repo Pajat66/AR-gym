@@ -3,6 +3,13 @@ let handDetector = null;
 let camera = null;
 let isHandDetectionActive = false;
 
+const HAND_MEDIAPIPE_THEME = {
+    connectorColor: '#0f2f4d',
+    connectorShadow: 'rgba(15, 47, 77, 0.28)',
+    landmarkColor: '#e6b451',
+    landmarkOutline: '#ffffff'
+};
+
 function initHandDetection() {
     // 已初始化则直接复用，避免重复加载模型
     if (handDetector) return;
@@ -57,12 +64,20 @@ function onHandResults(results) {
         
         if (drawConnectors && drawLandmarks && HAND_CONNECTIONS) {
             for (const landmarks of results.multiHandLandmarks) {
+                ctx.shadowColor = HAND_MEDIAPIPE_THEME.connectorShadow;
+                ctx.shadowBlur = 8;
                 drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {
-                    color: '#00FF00',
-                    lineWidth: 2
+                    color: HAND_MEDIAPIPE_THEME.connectorColor,
+                    lineWidth: 3
+                });
+                ctx.shadowBlur = 0;
+                drawLandmarks(ctx, landmarks, {
+                    color: HAND_MEDIAPIPE_THEME.landmarkOutline,
+                    lineWidth: 1,
+                    radius: 5
                 });
                 drawLandmarks(ctx, landmarks, {
-                    color: '#FF0000',
+                    color: HAND_MEDIAPIPE_THEME.landmarkColor,
                     lineWidth: 1,
                     radius: 3
                 });

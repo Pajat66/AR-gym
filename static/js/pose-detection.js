@@ -10,6 +10,15 @@ let exerciseData = {
     fps: 0
 };
 
+const POSE_MEDIAPIPE_THEME = {
+    connectorColor: '#0f2f4d',
+    connectorShadow: 'rgba(15, 47, 77, 0.28)',
+    landmarkColor: '#e6b451',
+    landmarkOutline: '#ffffff',
+    promptBg: 'rgba(255, 255, 255, 0.88)',
+    promptText: '#0f2f4d'
+};
+
 // 将变量暴露到全局，以便main.js访问
 window.currentExerciseType = currentExerciseType;
 window.exerciseData = exerciseData;
@@ -78,12 +87,20 @@ function onPoseResults(results) {
         
         if (drawConnectors && drawLandmarks && POSE_CONNECTIONS) {
             // 绘制姿态骨架（与画面一起镜像）
+            ctx.shadowColor = POSE_MEDIAPIPE_THEME.connectorShadow;
+            ctx.shadowBlur = 8;
             drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {
-                color: '#00FF00',
-                lineWidth: 2
+                color: POSE_MEDIAPIPE_THEME.connectorColor,
+                lineWidth: 3
+            });
+            ctx.shadowBlur = 0;
+            drawLandmarks(ctx, results.poseLandmarks, {
+                color: POSE_MEDIAPIPE_THEME.landmarkOutline,
+                lineWidth: 1,
+                radius: 5
             });
             drawLandmarks(ctx, results.poseLandmarks, {
-                color: '#FF0000',
+                color: POSE_MEDIAPIPE_THEME.landmarkColor,
                 lineWidth: 1,
                 radius: 3
             });
@@ -93,16 +110,47 @@ function onPoseResults(results) {
         processExercise(results.poseLandmarks);
     } else {
         // 如果没有检测到姿态，显示提示（同样在镜像坐标系中绘制）
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.font = '24px Arial';
+        const prompt = '请确保全身在摄像头视野内';
+        ctx.font = '700 24px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('请确保全身在摄像头视野内', canvas.width / 2, canvas.height / 2);
+        const textWidth = ctx.measureText(prompt).width;
+        const boxX = canvas.width / 2 - textWidth / 2 - 22;
+        const boxY = canvas.height / 2 - 30;
+        const boxWidth = textWidth + 44;
+        const boxHeight = 56;
+        ctx.fillStyle = POSE_MEDIAPIPE_THEME.promptBg;
+        ctx.strokeStyle = 'rgba(230, 180, 81, 0.68)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        drawRoundedRect(ctx, boxX, boxY, boxWidth, boxHeight, 14);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = POSE_MEDIAPIPE_THEME.promptText;
+        ctx.fillText(prompt, canvas.width / 2, canvas.height / 2 + 9);
     }
 
     ctx.restore();
     
     // 更新FPS
     updateFPS();
+}
+
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+    if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(x, y, width, height, radius);
+        return;
+    }
+
+    const r = Math.min(radius, width / 2, height / 2);
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + width - r, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+    ctx.lineTo(x + width, y + height - r);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+    ctx.lineTo(x + r, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
 function processExercise(landmarks) {
@@ -463,6 +511,30 @@ function updateFPS() {
 
 function startTraining(exerciseType) {
     if (isTrainingActive) return;
+
+    if (!window.MediaPipe || !window.MediaPipe.Camera || !window.MediaPipe.Pose) {
+        console.warn('MediaPipe训练依赖尚未加载，等待中...');
+        setTimeout(() => {
+            if (!isTrainingActive) {
+                startTraining(exerciseType);
+            }
+        }, 500);
+        return;
+    }
+
+    if (!poseDetector) {
+        initPoseDetection();
+    }
+
+    if (!poseDetector) {
+        console.warn('MediaPipe Pose尚未初始化，等待中...');
+        setTimeout(() => {
+            if (!isTrainingActive) {
+                startTraining(exerciseType);
+            }
+        }, 500);
+        return;
+    }
     
     // 语音提示：开始某种训练
     if (typeof window.speak === 'function') {
@@ -499,10 +571,6 @@ function startTraining(exerciseType) {
     crunchState = { direction: 0, lastAngle: 0 };
     
     const video = document.getElementById('training_video');
-    
-    if (!poseDetector) {
-        initPoseDetection();
-    }
 
     // 启动训练前停止手部检测，避免占用同一个摄像头
     if (typeof stopHandDetection === 'function') {
@@ -511,16 +579,6 @@ function startTraining(exerciseType) {
 
     // 启动训练时禁用手势虚拟鼠标，避免冲突
     window.handMouseEnabled = false;
-    
-    if (!window.MediaPipe || !window.MediaPipe.Camera) {
-        console.warn('MediaPipe Camera未加载，等待中...');
-        setTimeout(() => {
-            if (window.MediaPipe && window.MediaPipe.Camera) {
-                startTraining(exerciseType);
-            }
-        }, 500);
-        return;
-    }
     
     const { Camera } = window.MediaPipe;
     
@@ -534,7 +592,15 @@ function startTraining(exerciseType) {
         height: 720
     });
     
-    trainingCamera.start();
+    trainingCamera.start().catch(error => {
+        console.error('训练摄像头启动失败:', error);
+        isTrainingActive = false;
+        currentExerciseType = null;
+        window.currentExerciseType = null;
+        if (typeof showToast === 'function') {
+            showToast('训练摄像头启动失败，请确认摄像头权限或刷新页面重试', 'error');
+        }
+    });
 }
 
 function stopTraining() {

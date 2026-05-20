@@ -100,22 +100,53 @@
     </script>
 </head>
 <body>
+    <div class="ambient-ui" aria-hidden="true">
+        <div class="ambient-orb ambient-orb-left"></div>
+        <div class="ambient-orb ambient-orb-right"></div>
+        <div class="ambient-ring ambient-ring-left">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        <div class="ambient-ring ambient-ring-right">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        <div class="ambient-thread ambient-thread-left"></div>
+        <div class="ambient-thread ambient-thread-right"></div>
+    </div>
+
     <div class="container">
         <!-- 顶部导航栏 -->
         <header class="header">
             <div class="logo">
-                <h1>🏋️ AR健身教练</h1>
+                <img src="{{ url_for('static', filename='login-C/logo.png') }}" alt="AR健身教练">
+                <div>
+                    <h1>AR健身教练</h1>
+                    <span>智能动作检测系统</span>
+                </div>
             </div>
             <nav class="nav">
-                <button class="nav-btn" onclick="showPage('home')">首页</button>
-                <button class="nav-btn" onclick="showPage('exercise')">开始训练</button>
-                <button class="nav-btn" onclick="showPage('ai-coach')">AI虚拟教练</button>
-                <button class="nav-btn" onclick="showPage('stats')">数据统计</button>
-                <button class="nav-btn" onclick="showPage('history')">历史记录</button>
+                <button class="nav-btn" data-page="home" onclick="showPage('home')">
+                    <img src="{{ url_for('static', filename='tuBiao/homepage.png') }}" alt="">首页
+                </button>
+                <button class="nav-btn" data-page="exercise" onclick="showPage('exercise')">
+                    <img src="{{ url_for('static', filename='tuBiao/dumbbell.png') }}" alt="">训练
+                </button>
+                <button class="nav-btn" data-page="ai-coach" onclick="showPage('ai-coach')">
+                    <img src="{{ url_for('static', filename='tuBiao/dumbbell_light.png') }}" alt="">AI教练
+                </button>
+                <button class="nav-btn" data-page="stats" onclick="showPage('stats')">
+                    <img src="{{ url_for('static', filename='tuBiao/data.png') }}" alt="">数据
+                </button>
+                <button class="nav-btn" data-page="history" onclick="showPage('history')">
+                    <img src="{{ url_for('static', filename='my/Playback-recording.png') }}" alt="">记录
+                </button>
             </nav>
             <div class="auth-status">
                 <span id="auth-user-label">未登录</span>
-                <button id="btn-show-auth" class="nav-btn nav-btn-secondary" onclick="toggleAuthPanel()">登录 / 注册</button>
+                <button id="btn-show-auth" class="nav-btn nav-btn-secondary" onclick="openAuthPanel()">登录 / 注册</button>
                 <button id="btn-logout" class="nav-btn nav-btn-secondary" style="display: none;" onclick="logoutUser()">退出登录</button>
             </div>
         </header>
@@ -123,8 +154,24 @@
         <!-- 主页面 -->
         <div id="home-page" class="page active">
             <div class="hero-section">
-                <h2 class="hero-title">欢迎使用AR健身教练</h2>
-                <p class="hero-subtitle">智能动作检测系统，让您的健身更科学、更高效</p>
+                <div class="hero-copy">
+                    <span class="section-kicker">AR Fitness Assistant</span>
+                    <h2 class="hero-title">AR健身教练</h2>
+                    <p class="hero-subtitle">用摄像头识别动作，用数据记录训练，把教学视频、动作评估和 AI 建议放进同一个训练台。</p>
+                    <div class="quick-start-section">
+                        <button class="btn-primary" onclick="showPage('exercise')">
+                            <img src="{{ url_for('static', filename='video/begin.png') }}" alt="">
+                            <span>开始训练</span>
+                        </button>
+                        <button class="btn-secondary" onclick="showPage('ai-coach')">
+                            <img src="{{ url_for('static', filename='tuBiao/send.png') }}" alt="">
+                            <span>咨询教练</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="hero-visual" aria-hidden="true">
+                    <img src="{{ url_for('static', filename='login-C/logo.png') }}" alt="">
+                </div>
 
                 <!-- 登录注册区域 -->
                 <div class="auth-section">
@@ -163,64 +210,56 @@
                     </div>
                 </div>
                 
-                <!-- 使用说明 -->
-                <div class="instruction-section">
-                    <div class="instruction-card">
-                        <h3>📖 使用说明</h3>
-                        <div class="instruction-content">
-                            <div class="instruction-item">
-                                <span class="instruction-number">1</span>
-                                <div>
-                                    <strong>手势识别导航</strong>
-                                    <p>在摄像头前伸出手指选择具体动作：1=俯卧撑，2=蹲起，3=反向卷腹，4=左侧杠铃弯举，5=右侧杠铃弯举；保持手势3秒确认</p>
-                                </div>
-                            </div>
-                            <div class="instruction-item">
-                                <span class="instruction-number">2</span>
-                                <div>
-                                    <strong>选择训练动作</strong>
-                                    <p>根据菜单提示，使用手势或点击按钮选择具体的训练动作</p>
-                                </div>
-                            </div>
-                            <div class="instruction-item">
-                                <span class="instruction-number">3</span>
-                                <div>
-                                    <strong>开始训练</strong>
-                                    <p>系统会自动检测您的动作，实时显示计数、角度和FPS，帮助您规范动作</p>
-                                </div>
-                            </div>
-                            <div class="instruction-item">
-                                <span class="instruction-number">4</span>
-                                <div>
-                                    <strong>保存数据</strong>
-                                    <p>训练结束后可以保存数据，查看统计和历史记录，追踪您的健身进度</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 快速开始按钮 -->
-                <div class="quick-start-section">
-                    <button class="btn-primary" onclick="showPage('exercise')">
-                        <span class="btn-icon">🚀</span>
-                        <span>开始训练</span>
-                    </button>
-                </div>
-
                 <!-- 训练类型卡片 -->
                 <div class="exercise-grid">
                     <div class="exercise-card" onclick="startExercise('upper_body')">
-                        <div class="card-icon">💪</div>
+                        <img class="card-icon-img" src="{{ url_for('static', filename='tuBiao/arm.png') }}" alt="">
                         <h3>上肢训练</h3>
                         <p>杠铃弯举、杠铃坐姿</p>
-                        <button class="card-btn">点击开始</button>
+                        <button class="card-btn"><img src="{{ url_for('static', filename='video/begin.png') }}" alt="">点击开始</button>
                     </div>
                     <div class="exercise-card" onclick="startExercise('lower_body')">
-                        <div class="card-icon">🏃</div>
+                        <img class="card-icon-img" src="{{ url_for('static', filename='tuBiao/leg.png') }}" alt="">
                         <h3>下肢训练</h3>
                         <p>俯卧撑、反向卷腹、蹲起</p>
-                        <button class="card-btn">点击开始</button>
+                        <button class="card-btn"><img src="{{ url_for('static', filename='video/begin.png') }}" alt="">点击开始</button>
+                    </div>
+                </div>
+
+                <!-- 使用说明 -->
+                <div class="instruction-section">
+                    <div class="instruction-card">
+                        <h3><img src="{{ url_for('static', filename='tuBiao/home-zhe.png') }}" alt="">训练流程</h3>
+                        <div class="instruction-content">
+                            <div class="instruction-item">
+                                <img src="{{ url_for('static', filename='tuBiao/homepage_light.png') }}" alt="">
+                                <div>
+                                    <strong>手势导航</strong>
+                                    <p>伸出 1-5 根手指选择动作，保持 3 秒确认。</p>
+                                </div>
+                            </div>
+                            <div class="instruction-item">
+                                <img src="{{ url_for('static', filename='tuBiao/dumbbell_light.png') }}" alt="">
+                                <div>
+                                    <strong>动作训练</strong>
+                                    <p>摄像头实时检测动作，显示计数、角度和 FPS。</p>
+                                </div>
+                            </div>
+                            <div class="instruction-item">
+                                <img src="{{ url_for('static', filename='tuBiao/data.png') }}" alt="">
+                                <div>
+                                    <strong>数据沉淀</strong>
+                                    <p>训练后保存记录，在统计和历史中追踪进步。</p>
+                                </div>
+                            </div>
+                            <div class="instruction-item">
+                                <img src="{{ url_for('static', filename='tuBiao/message.png') }}" alt="">
+                                <div>
+                                    <strong>AI 建议</strong>
+                                    <p>围绕计划、动作规范、热身恢复获得即时建议。</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -229,9 +268,11 @@
                     <h3>手势识别演示</h3>
                     <div style="margin-bottom: 10px; text-align: center; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
                         <button id="hand-mode-toggle" class="btn-primary" style="padding: 8px 20px; font-size: 0.9rem;" onclick="toggleHandMode()">
+                            <img src="{{ url_for('static', filename='my/select.png') }}" alt="">
                             切换为鼠标模式
                         </button>
                         <button id="gesture-nav-toggle" class="btn-primary" style="padding: 8px 20px; font-size: 0.9rem; background: var(--secondary-color);" onclick="toggleGestureNav()">
+                            <img src="{{ url_for('static', filename='video/begin.png') }}" alt="">
                             开始识别
                         </button>
                     </div>
@@ -251,7 +292,7 @@
 
                 <!-- 教学视频 -->
                 <div class="videos-section">
-                    <h3>📹 教学视频</h3>
+                    <h3><img src="{{ url_for('static', filename='tuBiao/player.png') }}" alt="">教学视频</h3>
                     <p class="section-subtitle">观看专业教练的讲解和示范，学习正确的动作要领</p>
                     <div id="videos-container" class="videos-grid">
                         <!-- 视频列表将动态加载 -->
@@ -266,7 +307,7 @@
             <div class="exercise-container">
                 <div class="exercise-header">
                     <h2 id="exercise-title">选择训练动作</h2>
-                    <button class="btn-back" onclick="backToHome()">返回</button>
+                    <button class="btn-back" onclick="backExerciseStep()">返回</button>
                 </div>
 
                 <!-- 训练部位总菜单 -->
@@ -274,11 +315,11 @@
                     <h3>选择训练部位</h3>
                     <div class="menu-grid">
                         <div class="menu-item" onclick="startExercise('upper_body')">
-                            <span class="menu-number">1</span>
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/arm.png') }}" alt="">
                             <span>上肢训练</span>
                         </div>
                         <div class="menu-item" onclick="startExercise('lower_body')">
-                            <span class="menu-number">2</span>
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/leg.png') }}" alt="">
                             <span>下肢训练</span>
                         </div>
                     </div>
@@ -289,16 +330,16 @@
                     <h3>上肢训练</h3>
                     <div class="menu-grid">
                         <div class="menu-item" onclick="selectExercise('barbell_curl')">
-                            <span class="menu-number">1</span>
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/dumbbell.png') }}" alt="">
                             <span>杠铃弯举</span>
                         </div>
                         <div class="menu-item" onclick="selectExercise('barbell_sit')">
-                            <span class="menu-number">2</span>
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/shoulder.png') }}" alt="">
                             <span>杠铃坐姿</span>
                         </div>
-                        <div class="menu-item" onclick="backToHome()">
-                            <span class="menu-number">3</span>
-                            <span>返回主菜单</span>
+                        <div class="menu-item menu-back-item" onclick="showExerciseGroupMenu()">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/up.png') }}" alt="">
+                            <span>返回上一级</span>
                         </div>
                     </div>
                 </div>
@@ -307,20 +348,20 @@
                     <h3>下肢训练</h3>
                     <div class="menu-grid">
                         <div class="menu-item" onclick="selectExercise('pushup')">
-                            <span class="menu-number">1</span>
+                            <img class="menu-icon" src="{{ url_for('static', filename='assessmentImage/pushup.png') }}" alt="">
                             <span>俯卧撑计数</span>
                         </div>
                         <div class="menu-item" onclick="selectExercise('reverse_crunch')">
-                            <span class="menu-number">2</span>
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/abdomen.png') }}" alt="">
                             <span>反向卷腹</span>
                         </div>
                         <div class="menu-item" onclick="selectExercise('squat')">
-                            <span class="menu-number">3</span>
+                            <img class="menu-icon" src="{{ url_for('static', filename='assessmentImage/squat.png') }}" alt="">
                             <span>蹲起</span>
                         </div>
-                        <div class="menu-item" onclick="backToHome()">
-                            <span class="menu-number">4</span>
-                            <span>返回主菜单</span>
+                        <div class="menu-item menu-back-item" onclick="showExerciseGroupMenu()">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/up.png') }}" alt="">
+                            <span>返回上一级</span>
                         </div>
                     </div>
                 </div>
@@ -329,15 +370,15 @@
                     <h3>杠铃弯举</h3>
                     <div class="menu-grid">
                         <div class="menu-item" onclick="startExerciseType('barbell_curl_left')">
-                            <span class="menu-number">1</span>
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/arm.png') }}" alt="">
                             <span>左侧弯举</span>
                         </div>
                         <div class="menu-item" onclick="startExerciseType('barbell_curl_right')">
-                            <span class="menu-number">2</span>
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/arm.png') }}" alt="">
                             <span>右侧弯举</span>
                         </div>
-                        <div class="menu-item" onclick="showMenu('upper-body-menu')">
-                            <span class="menu-number">3</span>
+                        <div class="menu-item menu-back-item" onclick="showMenu('upper-body-menu')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/up.png') }}" alt="">
                             <span>返回上一级</span>
                         </div>
                     </div>
@@ -347,15 +388,15 @@
                     <h3>杠铃坐姿</h3>
                     <div class="menu-grid">
                         <div class="menu-item" onclick="startExerciseType('barbell_sit_left')">
-                            <span class="menu-number">1</span>
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/back.png') }}" alt="">
                             <span>左侧坐姿</span>
                         </div>
                         <div class="menu-item" onclick="startExerciseType('barbell_sit_right')">
-                            <span class="menu-number">2</span>
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/back.png') }}" alt="">
                             <span>右侧坐姿</span>
                         </div>
-                        <div class="menu-item" onclick="showMenu('upper-body-menu')">
-                            <span class="menu-number">3</span>
+                        <div class="menu-item menu-back-item" onclick="showMenu('upper-body-menu')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/up.png') }}" alt="">
                             <span>返回上一级</span>
                         </div>
                     </div>
@@ -366,7 +407,9 @@
                     <div class="training-info">
                         <h3 id="training-exercise-name">准备开始训练</h3>
                         <p id="training-exercise-desc">请确保摄像头已开启，站在摄像头前准备开始</p>
-                        <button class="btn-start-training" onclick="startTrainingFromButton()">开始训练</button>
+                        <button class="btn-start-training" onclick="startTrainingFromButton()">
+                            <img src="{{ url_for('static', filename='video/begin.png') }}" alt="">开始训练
+                        </button>
                     </div>
                     <div class="video-container" id="training-video-container" style="display: none;">
                         <video id="training_video" autoplay></video>
@@ -386,8 +429,12 @@
                             </div>
                         </div>
                         <div class="training-controls">
-                            <button class="btn-stop" onclick="stopExercise()">停止训练</button>
-                            <button class="btn-save" onclick="saveExerciseData()">保存数据</button>
+                            <button class="btn-stop" onclick="stopExercise()">
+                                <img src="{{ url_for('static', filename='video/stop.png') }}" alt="">停止训练
+                            </button>
+                            <button class="btn-save" onclick="saveExerciseData()">
+                                <img src="{{ url_for('static', filename='my/data.png') }}" alt="">保存数据
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -404,21 +451,23 @@
                         <p>围绕动作规范、训练计划、热身拉伸和恢复建议进行实时对话。</p>
                     </div>
                     <div class="coach-orbit" aria-hidden="true">
-                        <div class="coach-avatar">AI</div>
+                        <div class="coach-avatar">
+                            <img src="{{ url_for('static', filename='login-C/logo.png') }}" alt="">
+                        </div>
                     </div>
                 </div>
 
                 <div class="ai-chat-shell">
                     <div id="ai-chat-messages" class="ai-chat-messages">
                         <div class="chat-message assistant">
-                            <div class="chat-bubble">
-                                你好，我是你的AI虚拟教练。你可以问我今天适合练什么、某个动作怎么做更标准，或者让帮你安排一组训练计划。
-                            </div>
+                            <div class="chat-bubble">你好，我是你的AI虚拟教练。你可以问我今天适合练什么、某个动作怎么做更标准，或者让帮你安排一组训练计划。</div>
                         </div>
                     </div>
                     <form id="ai-chat-form" class="ai-chat-form" onsubmit="return submitAiCoachMessage(event)">
                         <textarea id="ai-chat-input" rows="2" placeholder="例如：帮我安排一组20分钟的上肢训练，并提醒动作注意事项"></textarea>
-                        <button id="ai-chat-submit" class="btn-primary" type="submit">发送</button>
+                        <button id="ai-chat-submit" class="btn-primary" type="submit">
+                            <img src="{{ url_for('static', filename='tuBiao/send.png') }}" alt="">发送
+                        </button>
                     </form>
                     <div class="ai-quick-prompts">
                         <button type="button" onclick="fillAiPrompt('我今天想练上肢，请给我一个适合初学者的训练计划')">上肢计划</button>
@@ -432,7 +481,7 @@
         <!-- 数据统计页面 -->
         <div id="stats-page" class="page">
             <div class="stats-container">
-                <h2>运动数据统计</h2>
+                <h2><img class="title-icon" src="{{ url_for('static', filename='tuBiao/data.png') }}" alt="">运动数据统计</h2>
                 <canvas id="stats-chart" style="max-width: 100%; margin-bottom: 30px;"></canvas>
                 <div id="stats-content" class="stats-grid">
                     <!-- 统计数据将动态加载 -->
@@ -443,7 +492,7 @@
         <!-- 历史记录页面 -->
         <div id="history-page" class="page">
             <div class="history-container">
-                <h2>历史记录</h2>
+                <h2><img class="title-icon" src="{{ url_for('static', filename='my/Playback-recording.png') }}" alt="">历史记录</h2>
                 <div id="history-content" class="history-list">
                     <!-- 历史记录将动态加载 -->
                 </div>
@@ -476,6 +525,28 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div id="fitness-buddy" class="fitness-buddy" role="button" tabindex="0" aria-label="健身伙伴">
+        <div class="buddy-speech" id="buddy-speech">加油，你最棒！</div>
+        <div class="buddy-body" aria-hidden="true">
+            <div class="buddy-antenna"></div>
+            <div class="buddy-headband"></div>
+            <div class="buddy-face">
+                <div class="buddy-eye">
+                    <span class="buddy-pupil"></span>
+                </div>
+                <div class="buddy-eye">
+                    <span class="buddy-pupil"></span>
+                </div>
+                <div class="buddy-smile"></div>
+            </div>
+            <div class="buddy-core">
+                <span></span>
+            </div>
+            <div class="buddy-arm buddy-arm-left"></div>
+            <div class="buddy-arm buddy-arm-right"></div>
         </div>
     </div>
 

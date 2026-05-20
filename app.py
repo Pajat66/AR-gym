@@ -8,8 +8,9 @@ import hashlib
 import hmac
 import os
 import ssl
+from pathlib import Path
 from time import mktime
-from urllib.parse import urlencode, urljoin, urlparse
+from urllib.parse import unquote, urlencode, urljoin, urlparse
 from wsgiref.handlers import format_date_time
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -57,6 +58,8 @@ SPARK_CONFIG = {
     'path': '/v1.1/chat',
     'domain': 'lite'
 }
+
+FAILED_OSS_HOSTS = {'exercise-image.oss-cn-beijing.aliyuncs.com'}
 
 def get_db_connection():
     """获取数据库连接（使用测试成功的配置）"""
@@ -292,7 +295,36 @@ def ask_spark_coach(messages):
         if ws:
             ws.close()
 
-def normalize_media_url(value):
+def normalize_media_name(value):
+    return ''.join(ch.lower() for ch in value if ch.isalnum())
+
+def find_local_static_media_url(title, original_url, media_type):
+    media_config = {
+        'video': ('videos', {'.mp4', '.webm', '.mov', '.m4v'}),
+        'image': ('images', {'.jpg', '.jpeg', '.png', '.webp'})
+    }
+    static_folder, extensions = media_config.get(media_type, media_config['video'])
+    static_dir = Path(app.root_path) / 'static' / static_folder
+    if not static_dir.exists():
+        return ''
+
+    parsed = urlparse(original_url)
+    original_name = unquote(Path(parsed.path).name)
+    original_path = static_dir / original_name
+    if original_name and original_path.exists():
+        return urljoin(request.host_url, f'static/{static_folder}/{original_name}')
+
+    title_key = normalize_media_name(Path(str(title or '')).stem)
+    for file_path in static_dir.iterdir():
+        if not file_path.is_file() or file_path.suffix.lower() not in extensions:
+            continue
+        stem_key = normalize_media_name(file_path.stem)
+        if title_key and (title_key == stem_key or title_key in stem_key or stem_key in title_key):
+            return urljoin(request.host_url, f'static/{static_folder}/{file_path.name}')
+
+    return ''
+
+def normalize_media_url(value, media_type='video', title=''):
     """把数据库里的视频/封面地址规范成浏览器可直接请求的 URL。"""
     if value is None:
         return ''
@@ -301,7 +333,13 @@ def normalize_media_url(value):
     if not url:
         return ''
 
-    if url.startswith(('http://', 'https://', 'data:', 'blob:')):
+    if url.startswith(('http://', 'https://')):
+        parsed = urlparse(url)
+        if parsed.netloc in FAILED_OSS_HOSTS:
+            return find_local_static_media_url(title, url, media_type)
+        return url
+
+    if url.startswith(('data:', 'blob:')):
         return url
 
     if url.startswith('//'):
@@ -310,16 +348,20 @@ def normalize_media_url(value):
     if url.startswith(('www.', 'm.', 'static.')):
         return f'https://{url}'
 
-    # 兼容数据库中保存 static/xxx、/static/xxx 或 media/xxx 这类相对路径的情况。
+    # 兼容数据库中保存 videos/xxx、images/xxx、static/xxx 或 /static/xxx 这类相对路径的情况。
     normalized_path = url.replace('\\', '/')
+    normalized_without_slash = normalized_path.lstrip('/')
+    if normalized_without_slash.startswith(('videos/', 'images/')):
+        normalized_path = f'static/{normalized_without_slash}'
     return urljoin(request.host_url, normalized_path.lstrip('/'))
 
 def normalize_video_record(record):
     if not record:
         return record
 
-    record['Video_URL'] = normalize_media_url(record.get('Video_URL'))
-    record['Video_Image_URL'] = normalize_media_url(record.get('Video_Image_URL'))
+    title = record.get('Title') or ''
+    record['Video_URL'] = normalize_media_url(record.get('Video_URL'), 'video', title)
+    record['Video_Image_URL'] = normalize_media_url(record.get('Video_Image_URL'), 'image', title)
     record['Video_ID'] = record.get('Video_ID') or record.get('Vid') or record.get('id')
     record['Estimated_Time'] = record.get('Estimated_Time') or 0
     record['Estimated_Calories'] = record.get('Estimated_Calories') or 0

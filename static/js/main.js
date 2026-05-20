@@ -1,6 +1,7 @@
 // 主应用逻辑
 let currentPage = 'home';
 let currentMenu = null;
+let currentExerciseParentMenu = 'exercise-group-menu';
 
 // 训练结束/保存二次确认状态
 let stopConfirmPending = false;
@@ -17,6 +18,18 @@ let currentUser = null;
 // AI虚拟教练上下文
 let aiCoachHistory = [];
 let toastTimer = null;
+let buddyLineTimer = null;
+
+const buddyLines = [
+    '加油，你最棒！',
+    '锻炼不停歇！',
+    '今天也要动起来。',
+    '保持呼吸，动作更稳。',
+    '再坚持一组就很强。',
+    '肩背打开，核心收紧。',
+    '你离目标又近一步。',
+    '训练完成后记得拉伸。'
+];
 
 // 手势虚拟鼠标模式：'gesture' | 'mouse'
 window.handMouseMode = 'gesture';
@@ -66,7 +79,104 @@ document.addEventListener('DOMContentLoaded', () => {
     const cursor = document.createElement('div');
     cursor.id = 'hand-mouse-cursor';
     document.body.appendChild(cursor);
+
+    const glow = document.createElement('div');
+    glow.id = 'pointer-glow';
+    document.body.appendChild(glow);
+
+    document.addEventListener('pointermove', event => {
+        glow.style.opacity = '1';
+        glow.style.transform = `translate(${event.clientX}px, ${event.clientY}px)`;
+
+        document.documentElement.style.setProperty('--mouse-x', `${event.clientX}px`);
+        document.documentElement.style.setProperty('--mouse-y', `${event.clientY}px`);
+
+        const viewportX = (event.clientX / Math.max(window.innerWidth, 1) - 0.5) * 2;
+        const viewportY = (event.clientY / Math.max(window.innerHeight, 1) - 0.5) * 2;
+        document.documentElement.style.setProperty('--ambient-x', `${(viewportX * 14).toFixed(2)}px`);
+        document.documentElement.style.setProperty('--ambient-y', `${(viewportY * 10).toFixed(2)}px`);
+    });
+
+    document.addEventListener('pointerleave', () => {
+        glow.style.opacity = '0';
+    });
+
+    document.querySelectorAll('.exercise-card, .video-card, .menu-item, .ai-coach-hero, .instruction-item').forEach(element => {
+        element.classList.add('interactive-tilt');
+        element.addEventListener('pointermove', event => {
+            const rect = element.getBoundingClientRect();
+            const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
+            const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+            element.style.setProperty('--tilt-x', `${(-y * 3).toFixed(2)}deg`);
+            element.style.setProperty('--tilt-y', `${(x * 4).toFixed(2)}deg`);
+            element.style.setProperty('--spot-x', `${event.clientX - rect.left}px`);
+            element.style.setProperty('--spot-y', `${event.clientY - rect.top}px`);
+        });
+        element.addEventListener('pointerleave', () => {
+            element.style.setProperty('--tilt-x', '0deg');
+            element.style.setProperty('--tilt-y', '0deg');
+        });
+    });
+
+    initFitnessBuddy();
 });
+
+function setBuddyLine(line) {
+    const speech = document.getElementById('buddy-speech');
+    if (!speech) return;
+
+    speech.classList.remove('show');
+    window.setTimeout(() => {
+        speech.textContent = line;
+        speech.classList.add('show');
+    }, 120);
+}
+
+function pickBuddyLine() {
+    return buddyLines[Math.floor(Math.random() * buddyLines.length)];
+}
+
+function initFitnessBuddy() {
+    const buddy = document.getElementById('fitness-buddy');
+    if (!buddy) return;
+
+    const pupils = buddy.querySelectorAll('.buddy-pupil');
+    const speech = document.getElementById('buddy-speech');
+    if (speech) speech.classList.add('show');
+
+    document.addEventListener('pointermove', event => {
+        const face = buddy.querySelector('.buddy-face');
+        if (!face) return;
+
+        const rect = face.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const dx = event.clientX - centerX;
+        const dy = event.clientY - centerY;
+        const distance = Math.max(Math.hypot(dx, dy), 1);
+        const moveX = (dx / distance) * 5;
+        const moveY = (dy / distance) * 4;
+
+        pupils.forEach(pupil => {
+            pupil.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
+        });
+    });
+
+    function sayRandomLine() {
+        setBuddyLine(pickBuddyLine());
+    }
+
+    buddy.addEventListener('click', sayRandomLine);
+    buddy.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            sayRandomLine();
+        }
+    });
+
+    if (buddyLineTimer) clearInterval(buddyLineTimer);
+    buddyLineTimer = window.setInterval(sayRandomLine, 12000);
+}
 
 window.updateHandMouseCursor = function(x, y, click = false) {
     const cursor = document.getElementById('hand-mouse-cursor');
@@ -100,13 +210,13 @@ function toggleHandMode() {
     const btn = document.getElementById('hand-mode-toggle');
     if (window.handMouseMode === 'gesture') {
         window.handMouseMode = 'mouse';
-        if (btn) btn.textContent = '切换为手势模式';
+        if (btn) btn.innerHTML = '<img src="/static/my/selecting.png" alt="">切换为手势模式';
         if (typeof window.speak === 'function') {
             window.speak('已切换为鼠标模式');
         }
     } else {
         window.handMouseMode = 'gesture';
-        if (btn) btn.textContent = '切换为鼠标模式';
+        if (btn) btn.innerHTML = '<img src="/static/my/select.png" alt="">切换为鼠标模式';
         if (typeof window.speak === 'function') {
             window.speak('已切换为手势模式');
         }
@@ -127,7 +237,8 @@ function toggleGestureNav() {
     window.gestureNavEnabled = !window.gestureNavEnabled;
 
     if (btn) {
-        btn.textContent = window.gestureNavEnabled ? '停止识别' : '开始识别';
+        const icon = window.gestureNavEnabled ? '/static/video/stop.png' : '/static/video/begin.png';
+        btn.innerHTML = `<img src="${icon}" alt="">${window.gestureNavEnabled ? '停止识别' : '开始识别'}`;
     }
 
     if (typeof window.speak === 'function') {
@@ -139,6 +250,15 @@ function toggleGestureNav() {
 function toggleAuthPanel(forceOpen) {
     const panel = document.getElementById('auth-panel');
     if (!panel) return;
+
+    const shouldOpen = forceOpen === true || (forceOpen !== false && !panel.classList.contains('open'));
+    if (shouldOpen && currentPage !== 'home') {
+        showPage('home');
+        setTimeout(() => {
+            panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 80);
+    }
+
     if (forceOpen === true) {
         panel.classList.add('open');
     } else if (forceOpen === false) {
@@ -304,6 +424,9 @@ async function submitRegister(event) {
 }
 
 async function logoutUser() {
+    const confirmed = window.confirm('确定要退出登录吗？');
+    if (!confirmed) return;
+
     try {
         await fetch('/api/logout', { method: 'POST' });
     } catch (e) {
@@ -416,6 +539,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // 页面切换
 function showPage(pageName) {
+    if (pageName !== currentPage) {
+        closeVideoModal();
+    }
+
     // 隐藏所有页面
     document.querySelectorAll('.page').forEach(page => {
         page.classList.remove('active');
@@ -427,13 +554,23 @@ function showPage(pageName) {
         targetPage.classList.add('active');
         currentPage = pageName;
     }
+
+    document.querySelectorAll('.nav-btn[data-page]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.page === pageName);
+    });
     
     // 根据页面和模式启用/禁用手势虚拟鼠标：
     // 启用鼠标模式时，在所有页面启用手势鼠标（训练过程中由姿态检测代码单独关闭）
-    if (window.handMouseMode === 'mouse') {
+    if (window.handMouseMode === 'mouse' && pageName === 'home') {
         window.handMouseEnabled = true;
     } else {
         window.handMouseEnabled = false;
+        const cursor = document.getElementById('hand-mouse-cursor');
+        if (cursor) cursor.style.display = 'none';
+    }
+
+    if (pageName === 'exercise' && !currentMenu) {
+        showExerciseGroupMenu();
     }
 }
 
@@ -464,15 +601,35 @@ function showMenu(menuId) {
         targetMenu.style.display = 'block';
         currentMenu = menuId;
     }
+
+    const title = document.getElementById('exercise-title');
+    if (title) {
+        const titles = {
+            'exercise-group-menu': '选择训练动作',
+            'upper-body-menu': '上肢训练',
+            'lower-body-menu': '下肢训练',
+            'barbell-curl-menu': '杠铃弯举',
+            'barbell-sit-menu': '杠铃坐姿'
+        };
+        title.textContent = titles[menuId] || '选择训练动作';
+    }
+}
+
+function showExerciseGroupMenu() {
+    currentExerciseParentMenu = 'exercise-group-menu';
+    showMenu('exercise-group-menu');
 }
 
 // 选择运动类型
 function selectExercise(exerciseType) {
     if (exerciseType === 'barbell_curl') {
+        currentExerciseParentMenu = 'upper-body-menu';
         showMenu('barbell-curl-menu');
     } else if (exerciseType === 'barbell_sit') {
+        currentExerciseParentMenu = 'upper-body-menu';
         showMenu('barbell-sit-menu');
     } else {
+        currentExerciseParentMenu = 'lower-body-menu';
         // 直接开始训练
         startExerciseType(exerciseType);
     }
@@ -569,6 +726,35 @@ function backToHome() {
     currentMenu = null;
 }
 
+function backExerciseStep() {
+    const trainingInterface = document.getElementById('training-interface');
+    const videoContainer = document.getElementById('training-video-container');
+    const isTrainingInterfaceVisible = trainingInterface && trainingInterface.style.display !== 'none';
+    const isCameraTraining = videoContainer && videoContainer.style.display !== 'none';
+
+    if (isTrainingInterfaceVisible) {
+        if (isCameraTraining && typeof stopTraining === 'function') {
+            const confirmed = window.confirm('当前训练正在进行，返回上一级会停止训练，是否继续？');
+            if (!confirmed) return;
+            stopTraining();
+        }
+        showMenu(currentExerciseParentMenu || 'exercise-group-menu');
+        return;
+    }
+
+    if (currentMenu === 'barbell-curl-menu' || currentMenu === 'barbell-sit-menu') {
+        showMenu('upper-body-menu');
+        return;
+    }
+
+    if (currentMenu === 'upper-body-menu' || currentMenu === 'lower-body-menu') {
+        showExerciseGroupMenu();
+        return;
+    }
+
+    backToHome();
+}
+
 function fillAiPrompt(text) {
     const input = document.getElementById('ai-chat-input');
     if (!input) return;
@@ -612,7 +798,7 @@ async function submitAiCoachMessage(event) {
 
     if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.textContent = '思考中';
+        submitBtn.innerHTML = '<img src="/static/tuBiao/send.png" alt="">思考中';
     }
 
     try {
@@ -649,7 +835,7 @@ async function submitAiCoachMessage(event) {
     } finally {
         if (submitBtn) {
             submitBtn.disabled = false;
-            submitBtn.textContent = '发送';
+            submitBtn.innerHTML = '<img src="/static/tuBiao/send.png" alt="">发送';
         }
     }
 
@@ -705,8 +891,7 @@ async function saveExerciseData() {
         
         if (response.status === 401) {
             showToast('请先登录后再保存训练数据', 'warning');
-            toggleAuthPanel(true);
-            showPage('home');
+            openAuthPanel();
             return;
         }
 
@@ -729,6 +914,17 @@ async function saveExerciseData() {
     } catch (error) {
         showToast('保存失败: ' + error.message, 'error');
     }
+}
+
+function openAuthPanel() {
+    showPage('home');
+    const panel = document.getElementById('auth-panel');
+    if (!panel) return;
+
+    panel.classList.add('open');
+    setTimeout(() => {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
 }
 
 // 加载统计数据
@@ -987,7 +1183,7 @@ function displayVideos(videos) {
         const videoId = Number(video.Video_ID);
         if (!Number.isFinite(videoId)) return '';
         return `
-        <div class="video-card" onclick="playVideo(${videoId})">
+        <div class="video-card interactive-tilt" onclick="playVideo(${videoId})">
             <img src="${escapeHtml(video.Video_Image_URL || getVideoPlaceholder(video.Title))}"
                  alt="${escapeHtml(video.Title)}"
                  class="video-thumbnail"
@@ -996,9 +1192,9 @@ function displayVideos(videos) {
             <div class="video-card-content">
                 <h4 class="video-card-title">${escapeHtml(video.Title)}</h4>
                 <div class="video-card-meta">
-                    <span>⏱️ ${escapeHtml(video.Estimated_Time)}分钟</span>
-                    <span>🔥 ${escapeHtml(video.Estimated_Calories)}卡</span>
-                    <span>⭐ ${video.StarCount || 0}</span>
+                    <span><img src="/static/tuBiao/player.png" alt="">${escapeHtml(video.Estimated_Time)}分钟</span>
+                    <span><img src="/static/tuBiao/burn.png" alt="">${escapeHtml(video.Estimated_Calories)}卡</span>
+                    <span><img src="/static/tuBiao/star.png" alt="">${video.StarCount || 0}</span>
                 </div>
             </div>
         </div>
@@ -1024,9 +1220,9 @@ async function playVideo(videoId) {
             document.getElementById('video-modal-title').textContent = video.Title;
             document.getElementById('video-content').textContent = video.Content || '暂无介绍';
             document.getElementById('video-suitable').textContent = video.Suitable_People || '所有人';
-            document.getElementById('video-time').textContent = `⏱️ ${video.Estimated_Time}分钟`;
-            document.getElementById('video-calories').textContent = `🔥 ${video.Estimated_Calories}卡路里`;
-            document.getElementById('video-coach').textContent = video.Coach_Name ? `👨‍🏫 ${video.Coach_Name}` : '';
+            document.getElementById('video-time').textContent = `${video.Estimated_Time}分钟`;
+            document.getElementById('video-calories').textContent = `${video.Estimated_Calories}卡路里`;
+            document.getElementById('video-coach').textContent = video.Coach_Name ? `${video.Coach_Name}` : '';
             
             // 设置视频源
             const videoUrl = video.Video_URL || '';
@@ -1064,6 +1260,10 @@ function closeVideoModal() {
     if (player) {
         player.pause();
         player.currentTime = 0;
+        const source = document.getElementById('video-source');
+        if (source) source.src = '';
+        player.removeAttribute('src');
+        player.load();
     }
 }
 

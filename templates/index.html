@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR健身教练 - 智能动作检测系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 使用普通<script>方式加载MediaPipe，兼容CDN提供的全局变量 -->
+    <script>
+        (function() {
+            const CDN_SOURCES = [
+                'https://cdn.jsdelivr.net/npm',
+                'https://unpkg.com'
+            ];
+
+            function loadScript(src) {
+                return new Promise((resolve, reject) => {
+                    const s = document.createElement('script');
+                    s.src = src;
+                    s.async = true;
+                    s.onload = () => resolve();
+                    s.onerror = () => reject(new Error('加载失败: ' + src));
+                    document.head.appendChild(s);
+                });
+            }
+
+            let mediaPipeLoaded = false;
+
+            async function loadMediaPipe() {
+                for (const base of CDN_SOURCES) {
+                    try {
+                        console.log(`尝试从 ${base} 加载MediaPipe脚本...`);
+
+                        await loadScript(`${base}/@mediapipe/camera_utils/camera_utils.js`);
+                        await loadScript(`${base}/@mediapipe/hands/hands.js`);
+                        await loadScript(`${base}/@mediapipe/pose/pose.js`);
+                        await loadScript(`${base}/@mediapipe/drawing_utils/drawing_utils.js`);
+
+                        // 这些是MediaPipe UMD脚本在全局挂载的变量
+                        if (window.Camera && window.Hands && window.Pose &&
+                            window.drawConnectors && window.drawLandmarks &&
+                            window.HAND_CONNECTIONS && window.POSE_CONNECTIONS) {
+                            window.MediaPipe = {
+                                Camera: window.Camera,
+                                Hands: window.Hands,
+                                HAND_CONNECTIONS: window.HAND_CONNECTIONS,
+                                Pose: window.Pose,
+                                POSE_CONNECTIONS: window.POSE_CONNECTIONS,
+                                drawConnectors: window.drawConnectors,
+                                drawLandmarks: window.drawLandmarks
+                            };
+
+                            mediaPipeLoaded = true;
+                            console.log('✓ MediaPipe加载成功！');
+                            console.log('✓ 使用的CDN:', base);
+                            console.log('✓ 可用模块:', Object.keys(window.MediaPipe));
+
+                            // 触发加载完成事件
+                            window.dispatchEvent(new Event('mediapipeLoaded'));
+                            return;
+                        } else {
+                            throw new Error('MediaPipe全局对象未正确挂载');
+                        }
+                    } catch (error) {
+                        console.warn(`从 ${base} 加载MediaPipe失败:`, error.message);
+                    }
+                }
+
+                console.error('✗ MediaPipe模块加载失败！所有CDN源都不可用');
+                console.error('');
+                console.error('可能的原因：');
+                console.error('1. 网络连接问题，无法访问CDN');
+                console.error('2. 防火墙或代理阻止了CDN访问');
+                console.error('3. 浏览器或网络环境阻止了脚本加载');
+                console.error('4. 需要配置代理或VPN');
+                console.error('');
+                console.error('解决方案：');
+                console.error('1. 检查网络连接');
+                console.error('2. 尝试访问: https://cdn.jsdelivr.net 或 https://unpkg.com');
+                console.error('3. 检查防火墙/代理设置');
+                console.error('4. 使用VPN或更换网络');
+                console.error('5. 查看Network标签，检查哪些资源加载失败');
+
+                window.MediaPipe = null;
+                window.dispatchEvent(new Event('mediapipeLoaded'));
+            }
+
+            // 超时保护：10秒内仍未成功时给出提示（不重复触发事件）
+            setTimeout(function() {
+                if (!mediaPipeLoaded || !window.MediaPipe) {
+                    console.error('✗ MediaPipe加载超时（10秒）');
+                    console.error('请查看上方的错误信息以获取更多详情');
+                }
+            }, 10000);
+
+            // 开始加载
+            loadMediaPipe();
+        })();
+    </script>
+</head>
+<body>
+    <div class="ambient-ui" aria-hidden="true">
+        <div class="ambient-orb ambient-orb-left"></div>
+        <div class="ambient-orb ambient-orb-right"></div>
+        <div class="ambient-ring ambient-ring-left">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        <div class="ambient-ring ambient-ring-right">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        <div class="ambient-thread ambient-thread-left"></div>
+        <div class="ambient-thread ambient-thread-right"></div>
+    </div>
+
+    <div class="container">
+        <!-- 顶部导航栏 -->
+        <header class="header">
+            <div class="logo">
+                <img src="{{ url_for('static', filename='login-C/logo.png') }}" alt="AR健身教练">
+                <div>
+                    <h1>AR健身教练</h1>
+                    <span>智能动作检测系统</span>
+                </div>
+            </div>
+            <nav class="nav">
+                <button class="nav-btn" data-page="home" onclick="showPage('home')">
+                    <img src="{{ url_for('static', filename='tuBiao/homepage.png') }}" alt="">首页
+                </button>
+                <button class="nav-btn" data-page="exercise" onclick="showPage('exercise')">
+                    <img src="{{ url_for('static', filename='tuBiao/dumbbell.png') }}" alt="">训练
+                </button>
+                <button class="nav-btn" data-page="ai-coach" onclick="showPage('ai-coach')">
+                    <img src="{{ url_for('static', filename='tuBiao/dumbbell_light.png') }}" alt="">AI教练
+                </button>
+                <button class="nav-btn" data-page="stats" onclick="showPage('stats')">
+                    <img src="{{ url_for('static', filename='tuBiao/data.png') }}" alt="">数据
+                </button>
+                <button class="nav-btn" data-page="history" onclick="showPage('history')">
+                    <img src="{{ url_for('static', filename='my/Playback-recording.png') }}" alt="">记录
+                </button>
+            </nav>
+            <div class="auth-status">
+                <span id="auth-user-label">未登录</span>
+                <button id="btn-show-auth" class="nav-btn nav-btn-secondary" onclick="openAuthPanel()">登录 / 注册</button>
+                <button id="btn-logout" class="nav-btn nav-btn-secondary" style="display: none;" onclick="logoutUser()">退出登录</button>
+            </div>
+        </header>
+
+        <!-- 主页面 -->
+        <div id="home-page" class="page active">
+            <div class="hero-section">
+                <div class="hero-copy">
+                    <span class="section-kicker">AR Fitness Assistant</span>
+                    <h2 class="hero-title">AR健身教练</h2>
+                    <p class="hero-subtitle">用摄像头识别动作，用数据记录训练，把教学视频、动作评估和 AI 建议放进同一个训练台。</p>
+                    <div class="quick-start-section">
+                        <button class="btn-primary" onclick="showPage('exercise')">
+                            <img src="{{ url_for('static', filename='video/begin.png') }}" alt="">
+                            <span>开始训练</span>
+                        </button>
+                        <button class="btn-secondary" onclick="showPage('ai-coach')">
+                            <img src="{{ url_for('static', filename='tuBiao/send.png') }}" alt="">
+                            <span>咨询教练</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="hero-visual" aria-hidden="true">
+                    <img src="{{ url_for('static', filename='login-C/logo.png') }}" alt="">
+                </div>
+
+                <!-- 训练类型卡片 -->
+                <div class="exercise-grid">
+                    <div class="exercise-card" onclick="startExercise('upper_body')">
+                        <img class="card-icon-img" src="{{ url_for('static', filename='tuBiao/arm.png') }}" alt="">
+                        <h3>上肢训练</h3>
+                        <p>杠铃弯举、杠铃坐姿</p>
+                        <button class="card-btn"><img src="{{ url_for('static', filename='video/begin.png') }}" alt="">点击开始</button>
+                    </div>
+                    <div class="exercise-card" onclick="startExercise('lower_body')">
+                        <img class="card-icon-img" src="{{ url_for('static', filename='tuBiao/leg.png') }}" alt="">
+                        <h3>下肢训练</h3>
+                        <p>俯卧撑、反向卷腹、蹲起</p>
+                        <button class="card-btn"><img src="{{ url_for('static', filename='video/begin.png') }}" alt="">点击开始</button>
+                    </div>
+                </div>
+
+                <!-- 使用说明 -->
+                <div class="instruction-section">
+                    <div class="instruction-card">
+                        <h3><img src="{{ url_for('static', filename='tuBiao/home-zhe.png') }}" alt="">训练流程</h3>
+                        <div class="instruction-content">
+                            <div class="instruction-item">
+                                <img src="{{ url_for('static', filename='tuBiao/homepage_light.png') }}" alt="">
+                                <div>
+                                    <strong>手势导航</strong>
+                                    <p>伸出 1-5 根手指选择动作，保持 3 秒确认。</p>
+                                </div>
+                            </div>
+                            <div class="instruction-item">
+                                <img src="{{ url_for('static', filename='tuBiao/dumbbell_light.png') }}" alt="">
+                                <div>
+                                    <strong>动作训练</strong>
+                                    <p>摄像头实时检测动作，显示计数、角度和 FPS。</p>
+                                </div>
+                            </div>
+                            <div class="instruction-item">
+                                <img src="{{ url_for('static', filename='tuBiao/data.png') }}" alt="">
+                                <div>
+                                    <strong>数据沉淀</strong>
+                                    <p>训练后保存记录，在统计和历史中追踪进步。</p>
+                                </div>
+                            </div>
+                            <div class="instruction-item">
+                                <img src="{{ url_for('static', filename='tuBiao/message.png') }}" alt="">
+                                <div>
+                                    <strong>AI 建议</strong>
+                                    <p>围绕计划、动作规范、热身恢复获得即时建议。</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 手势识别预览 -->
+                <div class="camera-section">
+                    <h3>手势识别演示</h3>
+                    <div style="margin-bottom: 10px; text-align: center; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
+                        <button id="hand-mode-toggle" class="btn-primary" style="padding: 8px 20px; font-size: 0.9rem;" onclick="toggleHandMode()">
+                            <img src="{{ url_for('static', filename='my/select.png') }}" alt="">
+                            切换为鼠标模式
+                        </button>
+                        <button id="gesture-nav-toggle" class="btn-primary" style="padding: 8px 20px; font-size: 0.9rem; background: var(--secondary-color);" onclick="toggleGestureNav()">
+                            <img src="{{ url_for('static', filename='video/begin.png') }}" alt="">
+                            开始识别
+                        </button>
+                    </div>
+                    <div class="camera-preview" id="camera-preview">
+                        <video id="input_video" autoplay></video>
+                        <canvas id="output_canvas"></canvas>
+                        <div class="gesture-hint" id="gesture-hint">
+                            <p>请伸出手指选择具体动作：</p>
+                            <p>1️⃣ 俯卧撑计数</p>
+                            <p>2️⃣ 蹲起</p>
+                            <p>3️⃣ 反向卷腹</p>
+                            <p>4️⃣ 左侧杠铃弯举</p>
+                            <p>5️⃣ 右侧杠铃弯举</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 教学视频 -->
+                <div class="videos-section">
+                    <h3><img src="{{ url_for('static', filename='tuBiao/player.png') }}" alt="">教学视频</h3>
+                    <p class="section-subtitle">观看专业教练的讲解和示范，学习正确的动作要领</p>
+                    <div id="videos-container" class="videos-grid">
+                        <!-- 视频列表将动态加载 -->
+                        <div class="loading">正在加载视频...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 训练页面 -->
+        <div id="exercise-page" class="page">
+            <div class="exercise-container">
+                <div class="exercise-header">
+                    <h2 id="exercise-title">选择训练动作</h2>
+                    <button class="btn-back" onclick="backExerciseStep()">返回</button>
+                </div>
+
+                <!-- 训练部位总菜单 -->
+                <div id="exercise-group-menu" class="menu-section">
+                    <h3>选择训练部位</h3>
+                    <div class="menu-grid">
+                        <div class="menu-item" onclick="startExercise('upper_body')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/arm.png') }}" alt="">
+                            <span>上肢训练</span>
+                        </div>
+                        <div class="menu-item" onclick="startExercise('lower_body')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/leg.png') }}" alt="">
+                            <span>下肢训练</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 子菜单 -->
+                <div id="upper-body-menu" class="menu-section" style="display: none;">
+                    <h3>上肢训练</h3>
+                    <div class="menu-grid">
+                        <div class="menu-item" onclick="selectExercise('barbell_curl')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/dumbbell.png') }}" alt="">
+                            <span>杠铃弯举</span>
+                        </div>
+                        <div class="menu-item" onclick="selectExercise('barbell_sit')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/shoulder.png') }}" alt="">
+                            <span>杠铃坐姿</span>
+                        </div>
+                        <div class="menu-item menu-back-item" onclick="showExerciseGroupMenu()">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/up.png') }}" alt="">
+                            <span>返回上一级</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="lower-body-menu" class="menu-section" style="display: none;">
+                    <h3>下肢训练</h3>
+                    <div class="menu-grid">
+                        <div class="menu-item" onclick="selectExercise('pushup')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='assessmentImage/pushup.png') }}" alt="">
+                            <span>俯卧撑计数</span>
+                        </div>
+                        <div class="menu-item" onclick="selectExercise('reverse_crunch')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/abdomen.png') }}" alt="">
+                            <span>反向卷腹</span>
+                        </div>
+                        <div class="menu-item" onclick="selectExercise('squat')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='assessmentImage/squat.png') }}" alt="">
+                            <span>蹲起</span>
+                        </div>
+                        <div class="menu-item menu-back-item" onclick="showExerciseGroupMenu()">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/up.png') }}" alt="">
+                            <span>返回上一级</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="barbell-curl-menu" class="menu-section" style="display: none;">
+                    <h3>杠铃弯举</h3>
+                    <div class="menu-grid">
+                        <div class="menu-item" onclick="startExerciseType('barbell_curl_left')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/arm.png') }}" alt="">
+                            <span>左侧弯举</span>
+                        </div>
+                        <div class="menu-item" onclick="startExerciseType('barbell_curl_right')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/arm.png') }}" alt="">
+                            <span>右侧弯举</span>
+                        </div>
+                        <div class="menu-item menu-back-item" onclick="showMenu('upper-body-menu')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/up.png') }}" alt="">
+                            <span>返回上一级</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="barbell-sit-menu" class="menu-section" style="display: none;">
+                    <h3>杠铃坐姿</h3>
+                    <div class="menu-grid">
+                        <div class="menu-item" onclick="startExerciseType('barbell_sit_left')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/back.png') }}" alt="">
+                            <span>左侧坐姿</span>
+                        </div>
+                        <div class="menu-item" onclick="startExerciseType('barbell_sit_right')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/back.png') }}" alt="">
+                            <span>右侧坐姿</span>
+                        </div>
+                        <div class="menu-item menu-back-item" onclick="showMenu('upper-body-menu')">
+                            <img class="menu-icon" src="{{ url_for('static', filename='tuBiao/up.png') }}" alt="">
+                            <span>返回上一级</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 训练界面 -->
+                <div id="training-interface" class="training-interface" style="display: none;">
+                    <div class="training-info">
+                        <h3 id="training-exercise-name">准备开始训练</h3>
+                        <p id="training-exercise-desc">请确保摄像头已开启，站在摄像头前准备开始</p>
+                        <button class="btn-start-training" onclick="startTrainingFromButton()">
+                            <img src="{{ url_for('static', filename='video/begin.png') }}" alt="">开始训练
+                        </button>
+                    </div>
+                    <div class="video-container" id="training-video-container" style="display: none;">
+                        <video id="training_video" autoplay></video>
+                        <canvas id="training_canvas"></canvas>
+                        <div class="training-stats">
+                            <div class="stat-card">
+                                <div class="stat-label">计数</div>
+                                <div class="stat-value" id="exercise-count">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">角度</div>
+                                <div class="stat-value" id="exercise-angle">0°</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">FPS</div>
+                                <div class="stat-value" id="exercise-fps">0</div>
+                            </div>
+                        </div>
+                        <div class="training-controls">
+                            <button class="btn-stop" onclick="stopExercise()">
+                                <img src="{{ url_for('static', filename='video/stop.png') }}" alt="">停止训练
+                            </button>
+                            <button class="btn-save" onclick="saveExerciseData()">
+                                <img src="{{ url_for('static', filename='my/data.png') }}" alt="">保存数据
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI虚拟教练页面 -->
+        <div id="ai-coach-page" class="page">
+            <div class="ai-coach-container">
+                <div class="ai-coach-hero">
+                    <div>
+                        <span class="section-kicker">Spark AI Coach</span>
+                        <h2>AI虚拟教练</h2>
+                        <p>围绕动作规范、训练计划、热身拉伸和恢复建议进行实时对话。</p>
+                    </div>
+                    <div class="coach-orbit" aria-hidden="true">
+                        <div class="coach-avatar">
+                            <img src="{{ url_for('static', filename='login-C/logo.png') }}" alt="">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ai-chat-shell">
+                    <div id="ai-chat-messages" class="ai-chat-messages">
+                        <div class="chat-message assistant">
+                            <div class="chat-bubble">你好，我是你的AI虚拟教练。你可以问我今天适合练什么、某个动作怎么做更标准，或者让帮你安排一组训练计划。</div>
+                        </div>
+                    </div>
+                    <form id="ai-chat-form" class="ai-chat-form" onsubmit="return submitAiCoachMessage(event)">
+                        <textarea id="ai-chat-input" rows="2" placeholder="例如：帮我安排一组20分钟的上肢训练，并提醒动作注意事项"></textarea>
+                        <button id="ai-chat-submit" class="btn-primary" type="submit">
+                            <img src="{{ url_for('static', filename='tuBiao/send.png') }}" alt="">发送
+                        </button>
+                    </form>
+                    <div class="ai-quick-prompts">
+                        <button type="button" onclick="fillAiPrompt('我今天想练上肢，请给我一个适合初学者的训练计划')">上肢计划</button>
+                        <button type="button" onclick="fillAiPrompt('俯卧撑时肩膀不舒服，动作上可能要注意什么？')">动作纠正</button>
+                        <button type="button" onclick="fillAiPrompt('训练前后应该怎么热身和拉伸？')">热身拉伸</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 数据统计页面 -->
+        <div id="stats-page" class="page">
+            <div class="stats-container">
+                <h2><img class="title-icon" src="{{ url_for('static', filename='tuBiao/data.png') }}" alt="">运动数据统计</h2>
+                <canvas id="stats-chart" style="max-width: 100%; margin-bottom: 30px;"></canvas>
+                <div id="stats-content" class="stats-grid">
+                    <!-- 统计数据将动态加载 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 历史记录页面 -->
+        <div id="history-page" class="page">
+            <div class="history-container">
+                <h2><img class="title-icon" src="{{ url_for('static', filename='my/Playback-recording.png') }}" alt="">历史记录</h2>
+                <div id="history-content" class="history-list">
+                    <!-- 历史记录将动态加载 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 视频播放模态框 -->
+        <div id="video-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="modal-close" onclick="closeVideoModal()">&times;</span>
+                <div id="video-player-container">
+                    <h2 id="video-modal-title"></h2>
+                    <div class="video-info">
+                        <span id="video-time"></span>
+                        <span id="video-calories"></span>
+                        <span id="video-coach"></span>
+                    </div>
+                    <video id="video-player" controls>
+                        <source id="video-source" src="" type="video/mp4">
+                        您的浏览器不支持视频播放
+                    </video>
+                    <div id="video-fallback" class="video-fallback" style="display: none;">
+                        当前视频链接无法直接在浏览器播放器中播放。
+                        <a id="video-open-link" href="#" target="_blank" rel="noopener noreferrer">打开原视频链接</a>
+                    </div>
+                    <div class="video-description">
+                        <h4>视频介绍</h4>
+                        <p id="video-content"></p>
+                        <p><strong>适合人群：</strong><span id="video-suitable"></span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="auth-modal" id="auth-modal" aria-hidden="true">
+        <div class="auth-backdrop" onclick="closeAuthPanel()"></div>
+        <div class="auth-dialog" id="auth-panel" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+            <button class="auth-close" type="button" aria-label="关闭登录注册弹窗" onclick="closeAuthPanel()">×</button>
+            <section class="auth-stage" aria-label="互动角色">
+                <div class="auth-logo-mark" aria-hidden="true">
+                    <span></span>
+                </div>
+                <div class="auth-characters" id="auth-characters">
+                    <div class="auth-character auth-character-round" data-buddy="1">
+                        <span class="auth-eye left"></span>
+                        <span class="auth-eye right"></span>
+                        <span class="auth-mouth"></span>
+                    </div>
+                    <div class="auth-character auth-character-tall" data-buddy="2">
+                        <span class="auth-eye left"></span>
+                        <span class="auth-eye right"></span>
+                        <span class="auth-mouth"></span>
+                    </div>
+                    <div class="auth-character auth-character-small" data-buddy="3">
+                        <span class="auth-eye left"></span>
+                        <span class="auth-eye right"></span>
+                        <span class="auth-mouth"></span>
+                    </div>
+                    <div class="auth-character auth-character-arch" data-buddy="4">
+                        <span class="auth-eye left"></span>
+                        <span class="auth-eye right"></span>
+                        <span class="auth-mouth"></span>
+                    </div>
+                </div>
+                <p id="auth-buddy-message" class="auth-buddy-message">把鼠标移过来，他们会陪你登录。</p>
+            </section>
+
+            <section class="auth-card">
+                <div class="auth-card-head">
+                    <p class="auth-kicker">AR Fitness Account</p>
+                    <h2 id="auth-title">欢迎回来</h2>
+                    <p id="auth-subtitle">登录后同步训练记录、统计数据和 AI 建议。</p>
+                </div>
+                <div class="auth-tabs">
+                    <button id="tab-login" class="auth-tab active" type="button" onclick="switchAuthTab('login')">登录</button>
+                    <button id="tab-register" class="auth-tab" type="button" onclick="switchAuthTab('register')">注册</button>
+                </div>
+                <div class="auth-forms">
+                    <form id="login-form" class="auth-form" onsubmit="return submitLogin(event)">
+                        <div class="auth-field">
+                            <label for="login-username">用户名</label>
+                            <input id="login-username" type="text" autocomplete="username" required placeholder="请输入用户名">
+                        </div>
+                        <div class="auth-field">
+                            <label for="login-password">密码</label>
+                            <div class="auth-password-wrap">
+                                <input id="login-password" type="password" autocomplete="current-password" required placeholder="请输入密码">
+                                <button type="button" class="auth-eye-btn" onclick="togglePasswordVisibility('login-password', this)" aria-label="显示或隐藏密码"></button>
+                            </div>
+                        </div>
+                        <div id="login-error" class="auth-error" style="display:none;"></div>
+                        <button class="btn-primary auth-submit" type="submit">登录</button>
+                    </form>
+
+                    <form id="register-form" class="auth-form" style="display:none;" onsubmit="return submitRegister(event)">
+                        <div class="auth-field">
+                            <label for="register-username">用户名</label>
+                            <input id="register-username" type="text" autocomplete="username" required placeholder="请输入用户名">
+                        </div>
+                        <div class="auth-field">
+                            <label for="register-password">密码</label>
+                            <div class="auth-password-wrap">
+                                <input id="register-password" type="password" autocomplete="new-password" required placeholder="请输入密码（至少6位）">
+                                <button type="button" class="auth-eye-btn" onclick="togglePasswordVisibility('register-password', this)" aria-label="显示或隐藏密码"></button>
+                            </div>
+                        </div>
+                        <div id="register-error" class="auth-error" style="display:none;"></div>
+                        <button class="btn-primary auth-submit" type="submit">注册并登录</button>
+                    </form>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="fitness-buddy" class="fitness-buddy" role="button" tabindex="0" aria-label="健身伙伴">
+        <div class="buddy-speech" id="buddy-speech">加油，你最棒！</div>
+        <div class="buddy-body" aria-hidden="true">
+            <div class="buddy-antenna"></div>
+            <div class="buddy-headband"></div>
+            <div class="buddy-face">
+                <div class="buddy-eye">
+                    <span class="buddy-pupil"></span>
+                </div>
+                <div class="buddy-eye">
+                    <span class="buddy-pupil"></span>
+                </div>
+                <div class="buddy-smile"></div>
+            </div>
+            <div class="buddy-core">
+                <span></span>
+            </div>
+            <div class="buddy-arm buddy-arm-left"></div>
+            <div class="buddy-arm buddy-arm-right"></div>
+        </div>
+    </div>
+
+    <div id="app-toast" class="app-toast" aria-live="polite"></div>
+
+    <script src="{{ url_for('static', filename='js/hand-detection.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/pose-detection.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
+

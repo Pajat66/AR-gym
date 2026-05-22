@@ -5,3 +5,10 @@ pillow==8.3.1
 pyttsx3==2.90
 mediapipe==0.8.9
 autopy==0.3.0
+
+# Web应用依赖
+Flask==2.3.3
+Flask-CORS==4.0.0
+pymysql==1.1.0
+cryptography==41.0.7
+websocket-client==1.7.0

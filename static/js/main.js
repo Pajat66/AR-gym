@@ -119,6 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     initFitnessBuddy();
+    initAuthCharacters();
 });
 
 function setBuddyLine(line) {
@@ -247,25 +248,32 @@ function toggleGestureNav() {
 }
 
 // ===== 用户登录 / 注册相关 =====
-function toggleAuthPanel(forceOpen) {
-    const panel = document.getElementById('auth-panel');
-    if (!panel) return;
+let authMoodTimer = null;
 
-    const shouldOpen = forceOpen === true || (forceOpen !== false && !panel.classList.contains('open'));
-    if (shouldOpen && currentPage !== 'home') {
-        showPage('home');
-        setTimeout(() => {
-            panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 80);
-    }
+function toggleAuthPanel(forceOpen) {
+    const modal = document.getElementById('auth-modal');
+    if (!modal) return;
 
     if (forceOpen === true) {
-        panel.classList.add('open');
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('auth-modal-open');
+        setAuthMood('idle', '把鼠标移过来，他们会陪你登录。');
+        setTimeout(() => {
+            const firstInput = document.getElementById('login-username');
+            if (firstInput) firstInput.focus();
+        }, 80);
     } else if (forceOpen === false) {
-        panel.classList.remove('open');
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('auth-modal-open');
     } else {
-        panel.classList.toggle('open');
+        toggleAuthPanel(!modal.classList.contains('open'));
     }
+}
+
+function closeAuthPanel() {
+    toggleAuthPanel(false);
 }
 
 function switchAuthTab(tab) {
@@ -273,6 +281,8 @@ function switchAuthTab(tab) {
     const registerForm = document.getElementById('register-form');
     const tabLogin = document.getElementById('tab-login');
     const tabRegister = document.getElementById('tab-register');
+    const title = document.getElementById('auth-title');
+    const subtitle = document.getElementById('auth-subtitle');
     if (!loginForm || !registerForm || !tabLogin || !tabRegister) return;
 
     if (tab === 'login') {
@@ -280,12 +290,91 @@ function switchAuthTab(tab) {
         registerForm.style.display = 'none';
         tabLogin.classList.add('active');
         tabRegister.classList.remove('active');
+        if (title) title.textContent = '欢迎回来';
+        if (subtitle) subtitle.textContent = '登录后同步训练记录、统计数据和 AI 建议。';
+        setAuthMood('idle', '准备好开始今天的训练了吗？');
     } else {
         loginForm.style.display = 'none';
         registerForm.style.display = 'block';
         tabLogin.classList.remove('active');
         tabRegister.classList.add('active');
+        if (title) title.textContent = '创建账号';
+        if (subtitle) subtitle.textContent = '注册后会自动登录，并保存你的每次训练进步。';
+        setAuthMood('idle', '新伙伴加入，大家都在看着你。');
     }
+}
+
+function setAuthMood(mood = 'idle', message) {
+    const modal = document.getElementById('auth-modal');
+    const messageEl = document.getElementById('auth-buddy-message');
+    if (!modal) return;
+
+    modal.dataset.mood = mood;
+    if (messageEl && message) {
+        messageEl.textContent = message;
+    }
+
+    if (authMoodTimer) {
+        clearTimeout(authMoodTimer);
+        authMoodTimer = null;
+    }
+
+    if (mood !== 'idle' && mood !== 'typing') {
+        authMoodTimer = setTimeout(() => {
+            modal.dataset.mood = 'idle';
+        }, 1800);
+    }
+}
+
+function initAuthCharacters() {
+    const modal = document.getElementById('auth-modal');
+    const characters = document.getElementById('auth-characters');
+    if (!modal || !characters) return;
+
+    modal.dataset.mood = 'idle';
+
+    modal.addEventListener('pointermove', event => {
+        const rect = characters.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const dx = Math.max(-40, Math.min(40, event.clientX - centerX));
+        const dy = Math.max(-34, Math.min(34, event.clientY - centerY));
+        characters.style.setProperty('--look-x', dx.toFixed(2));
+        characters.style.setProperty('--look-y', dy.toFixed(2));
+    });
+
+    document.querySelectorAll('#login-password, #register-password').forEach(input => {
+        input.addEventListener('focus', () => {
+            setAuthMood('typing', '输入密码时，小伙伴会礼貌地闭上眼。');
+        });
+        input.addEventListener('input', () => {
+            setAuthMood('typing', '密码已隐藏，继续输入就好。');
+        });
+        input.addEventListener('blur', () => {
+            setAuthMood('idle', '他们又开始跟着鼠标看了。');
+        });
+    });
+
+    document.addEventListener('keydown', event => {
+        const isOpen = modal.classList.contains('open');
+        if (isOpen && event.key === 'Escape') {
+            closeAuthPanel();
+        }
+    });
+}
+
+function togglePasswordVisibility(inputId, button) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    const shouldShow = input.type === 'password';
+    input.type = shouldShow ? 'text' : 'password';
+    if (button) {
+        button.classList.toggle('is-visible', shouldShow);
+        button.setAttribute('aria-label', shouldShow ? '隐藏密码' : '显示密码');
+    }
+    setAuthMood(shouldShow ? 'idle' : 'typing', shouldShow ? '正在显示密码，请注意周围环境。' : '密码重新隐藏。');
+    input.focus();
 }
 
 function updateAuthUI() {
@@ -298,14 +387,16 @@ function updateAuthUI() {
         label.textContent = `已登录：${currentUser.username}`;
         btnShowAuth.style.display = 'none';
         btnLogout.style.display = 'inline-block';
-        // 已登录时隐藏首页登录/注册面板
-        toggleAuthPanel(false);
+        const modal = document.getElementById('auth-modal');
+        if (modal && modal.classList.contains('open')) {
+            setTimeout(() => toggleAuthPanel(false), 900);
+        } else {
+            toggleAuthPanel(false);
+        }
     } else {
         label.textContent = '未登录';
         btnShowAuth.style.display = 'inline-block';
         btnLogout.style.display = 'none';
-        // 未登录时默认展示首页登录/注册面板，方便用户操作
-        toggleAuthPanel(true);
     }
 }
 
@@ -347,6 +438,7 @@ async function submitLogin(event) {
         });
         const result = await res.json();
         if (!result.success) {
+            setAuthMood('error', result.error || '登录失败，请再检查一次。');
             if (errorEl) {
                 errorEl.textContent = result.error || '登录失败';
                 errorEl.style.display = 'block';
@@ -356,6 +448,7 @@ async function submitLogin(event) {
             return false;
         }
         currentUser = result.data;
+        setAuthMood('success', `欢迎回来，${currentUser.username}！`);
         updateAuthUI();
         showToast(`欢迎回来，${currentUser.username}`, 'success');
         loadStats();
@@ -364,6 +457,7 @@ async function submitLogin(event) {
         return false;
     } catch (e) {
         console.error('登录请求失败:', e);
+        setAuthMood('error', '登录请求失败，请稍后重试。');
         if (errorEl) {
             errorEl.textContent = '登录请求失败，请稍后重试';
             errorEl.style.display = 'block';
@@ -398,6 +492,7 @@ async function submitRegister(event) {
         });
         const result = await res.json();
         if (!result.success) {
+            setAuthMood('error', result.error || '注册失败，请再试一次。');
             if (errorEl) {
                 errorEl.textContent = result.error || '注册失败';
                 errorEl.style.display = 'block';
@@ -407,6 +502,7 @@ async function submitRegister(event) {
             return false;
         }
         currentUser = result.data;
+        setAuthMood('success', `注册成功，欢迎 ${currentUser.username}！`);
         updateAuthUI();
         showToast(`注册成功，欢迎 ${currentUser.username}`, 'success');
         loadStats();
@@ -415,6 +511,7 @@ async function submitRegister(event) {
         return false;
     } catch (e) {
         console.error('注册请求失败:', e);
+        setAuthMood('error', '注册请求失败，请稍后重试。');
         if (errorEl) {
             errorEl.textContent = '注册请求失败，请稍后重试';
             errorEl.style.display = 'block';
@@ -917,14 +1014,7 @@ async function saveExerciseData() {
 }
 
 function openAuthPanel() {
-    showPage('home');
-    const panel = document.getElementById('auth-panel');
-    if (!panel) return;
-
-    panel.classList.add('open');
-    setTimeout(() => {
-        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 80);
+    toggleAuthPanel(true);
 }
 
 // 加载统计数据

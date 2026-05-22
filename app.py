@@ -21,7 +21,7 @@ CORS(app)
 # 数据库配置
 # 根据MySQL用户列表，project@% 用户有远程访问权限
 DB_CONFIG = {
-    'host': '10.177.49.165',
+    'host': '10.31.44.117',
     'port': 3306,
     'user': 'project',  # 使用project用户（有%权限，可从任何主机连接）
     'password': 'Zbp42682600',
@@ -31,7 +31,7 @@ DB_CONFIG = {
 
 # 备用配置1：尝试使用Zbp42682600用户（如果存在）
 DB_CONFIG_ZBP = {
-    'host': '10.177.49.165',
+    'host': '10.31.44.117',
     'port': 3306,
     'user': 'Zbp42682600',
     'password': 'Zbp42682600',

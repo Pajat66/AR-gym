@@ -173,43 +173,6 @@
                     <img src="{{ url_for('static', filename='login-C/logo.png') }}" alt="">
                 </div>
 
-                <!-- 登录注册区域 -->
-                <div class="auth-section">
-                    <div class="auth-panel" id="auth-panel">
-                        <div class="auth-tabs">
-                            <button id="tab-login" class="auth-tab active" type="button" onclick="switchAuthTab('login')">登录</button>
-                            <button id="tab-register" class="auth-tab" type="button" onclick="switchAuthTab('register')">注册</button>
-                        </div>
-                        <div class="auth-forms">
-                            <form id="login-form" class="auth-form" onsubmit="return submitLogin(event)">
-                                <div class="auth-field">
-                                    <label for="login-username">用户名</label>
-                                    <input id="login-username" type="text" autocomplete="username" required placeholder="请输入用户名">
-                                </div>
-                                <div class="auth-field">
-                                    <label for="login-password">密码</label>
-                                    <input id="login-password" type="password" autocomplete="current-password" required placeholder="请输入密码">
-                                </div>
-                                <div id="login-error" class="auth-error" style="display:none;"></div>
-                                <button class="btn-primary auth-submit" type="submit">登录</button>
-                            </form>
-
-                            <form id="register-form" class="auth-form" style="display:none;" onsubmit="return submitRegister(event)">
-                                <div class="auth-field">
-                                    <label for="register-username">用户名</label>
-                                    <input id="register-username" type="text" autocomplete="username" required placeholder="请输入用户名">
-                                </div>
-                                <div class="auth-field">
-                                    <label for="register-password">密码</label>
-                                    <input id="register-password" type="password" autocomplete="new-password" required placeholder="请输入密码（至少6位）">
-                                </div>
-                                <div id="register-error" class="auth-error" style="display:none;"></div>
-                                <button class="btn-primary auth-submit" type="submit">注册并登录</button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-                
                 <!-- 训练类型卡片 -->
                 <div class="exercise-grid">
                     <div class="exercise-card" onclick="startExercise('upper_body')">
@@ -525,6 +488,86 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div class="auth-modal" id="auth-modal" aria-hidden="true">
+        <div class="auth-backdrop" onclick="closeAuthPanel()"></div>
+        <div class="auth-dialog" id="auth-panel" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+            <button class="auth-close" type="button" aria-label="关闭登录注册弹窗" onclick="closeAuthPanel()">×</button>
+            <section class="auth-stage" aria-label="互动角色">
+                <div class="auth-logo-mark" aria-hidden="true">
+                    <span></span>
+                </div>
+                <div class="auth-characters" id="auth-characters">
+                    <div class="auth-character auth-character-round" data-buddy="1">
+                        <span class="auth-eye left"></span>
+                        <span class="auth-eye right"></span>
+                        <span class="auth-mouth"></span>
+                    </div>
+                    <div class="auth-character auth-character-tall" data-buddy="2">
+                        <span class="auth-eye left"></span>
+                        <span class="auth-eye right"></span>
+                        <span class="auth-mouth"></span>
+                    </div>
+                    <div class="auth-character auth-character-small" data-buddy="3">
+                        <span class="auth-eye left"></span>
+                        <span class="auth-eye right"></span>
+                        <span class="auth-mouth"></span>
+                    </div>
+                    <div class="auth-character auth-character-arch" data-buddy="4">
+                        <span class="auth-eye left"></span>
+                        <span class="auth-eye right"></span>
+                        <span class="auth-mouth"></span>
+                    </div>
+                </div>
+                <p id="auth-buddy-message" class="auth-buddy-message">把鼠标移过来，他们会陪你登录。</p>
+            </section>
+
+            <section class="auth-card">
+                <div class="auth-card-head">
+                    <p class="auth-kicker">AR Fitness Account</p>
+                    <h2 id="auth-title">欢迎回来</h2>
+                    <p id="auth-subtitle">登录后同步训练记录、统计数据和 AI 建议。</p>
+                </div>
+                <div class="auth-tabs">
+                    <button id="tab-login" class="auth-tab active" type="button" onclick="switchAuthTab('login')">登录</button>
+                    <button id="tab-register" class="auth-tab" type="button" onclick="switchAuthTab('register')">注册</button>
+                </div>
+                <div class="auth-forms">
+                    <form id="login-form" class="auth-form" onsubmit="return submitLogin(event)">
+                        <div class="auth-field">
+                            <label for="login-username">用户名</label>
+                            <input id="login-username" type="text" autocomplete="username" required placeholder="请输入用户名">
+                        </div>
+                        <div class="auth-field">
+                            <label for="login-password">密码</label>
+                            <div class="auth-password-wrap">
+                                <input id="login-password" type="password" autocomplete="current-password" required placeholder="请输入密码">
+                                <button type="button" class="auth-eye-btn" onclick="togglePasswordVisibility('login-password', this)" aria-label="显示或隐藏密码"></button>
+                            </div>
+                        </div>
+                        <div id="login-error" class="auth-error" style="display:none;"></div>
+                        <button class="btn-primary auth-submit" type="submit">登录</button>
+                    </form>
+
+                    <form id="register-form" class="auth-form" style="display:none;" onsubmit="return submitRegister(event)">
+                        <div class="auth-field">
+                            <label for="register-username">用户名</label>
+                            <input id="register-username" type="text" autocomplete="username" required placeholder="请输入用户名">
+                        </div>
+                        <div class="auth-field">
+                            <label for="register-password">密码</label>
+                            <div class="auth-password-wrap">
+                                <input id="register-password" type="password" autocomplete="new-password" required placeholder="请输入密码（至少6位）">
+                                <button type="button" class="auth-eye-btn" onclick="togglePasswordVisibility('register-password', this)" aria-label="显示或隐藏密码"></button>
+                            </div>
+                        </div>
+                        <div id="register-error" class="auth-error" style="display:none;"></div>
+                        <button class="btn-primary auth-submit" type="submit">注册并登录</button>
+                    </form>
+                </div>
+            </section>
         </div>
     </div>
 
